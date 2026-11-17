@@ -22,18 +22,77 @@ Pangolin acts as a lightning-fast, zero-dependency Go gateway and CLI wrapper th
 ## Installation for Users
 
 ### Option A: Download Pre-Built Binaries (Recommended)
-Head over to the [GitHub Releases](https://github.com/Leonidas144k/pangolin/releases) page and download the binary for your operating system (Linux, macOS, or Windows).
+
+1. Open the [GitHub Releases](https://github.com/Leonidas144k/pangolin/releases) page.
+2. Download the binary that matches your operating system (Linux, macOS, or Windows) and CPU architecture.
+3. Extract the download if it is an archive, then rename the executable to `pangolin` on Linux or macOS, or `pangolin.exe` on Windows.
+4. Add the executable to your `PATH` so you can run `pangolin` from any directory.
+
+**Linux and macOS**
+
+From the directory containing the downloaded executable, run:
+
+```bash
+sudo mkdir -p /usr/local/bin
+sudo install -m 0755 ./pangolin /usr/local/bin/pangolin
+```
+
+**Windows**
+
+Move `pangolin.exe` to a folder such as `C:\Tools\Pangolin`, add that folder to your user `Path` environment variable, and open a new PowerShell window.
 
 ### Option B: Build From Source
-If you have Go installed, you can clone and build the binary directly:
+
+Install Git and Go, then clone the repository and build the CLI.
+
+**Linux and macOS**
+
 ```bash
-git clone [https://github.com/Leonidas144k/pangolin.git](https://github.com/Leonidas144k/pangolin.git)
+git clone https://github.com/Leonidas144k/pangolin.git
 cd pangolin
 go build -o pangolin ./cmd/pangolin
+```
 
+Install the compiled binary:
 
-### 2. Mint an Agent Passport
-Generate a short-lived, cryptographically signed token bound to specific agent capabilities:
 ```bash
-TOKEN=$(pangolin mint --agent "support-bot" --owner "ops@company.com" --scopes "mcp:tool:search,db:read")
-echo $TOKEN
+sudo mkdir -p /usr/local/bin
+sudo install -m 0755 ./pangolin /usr/local/bin/pangolin
+```
+
+**Windows (PowerShell)**
+
+```powershell
+git clone https://github.com/Leonidas144k/pangolin.git
+Set-Location pangolin
+go build -o pangolin.exe ./cmd/pangolin
+```
+
+Move the compiled executable to a folder on your `Path`, as described in Option A.
+
+## Quick Start
+
+The examples below assume `pangolin` is on your `PATH`. To run it directly from the directory containing the executable, replace `pangolin` with `./pangolin` on Linux or macOS, or `.\pangolin.exe` in PowerShell.
+
+### Mint an Agent Passport
+
+Generate a short-lived, cryptographically signed token bound to an agent, an owner, and specific permission scopes.
+
+**Linux and macOS (Bash)**
+
+```bash
+TOKEN=$(pangolin mint \
+  --agent "support-bot" \
+  --owner "ops@company.com" \
+  --scopes "mcp:tool:search,db:read")
+echo "$TOKEN"
+```
+
+**Windows (PowerShell)**
+
+```powershell
+$TOKEN = pangolin mint --agent "support-bot" --owner "ops@company.com" --scopes "mcp:tool:search,db:read"
+$TOKEN
+```
+
+Replace the example agent name, owner, and scopes with the values required for your agent.
