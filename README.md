@@ -19,9 +19,14 @@ Pangolin acts as a lightning-fast, zero-dependency Go gateway and CLI wrapper th
 - **YAML Policy Engine:** Granular path-based and tool-level allowlists/denylists (`pangolin.yaml`).
 - **Immutable JSON Audit Logging:** Every allow/block decision is logged with timestamps and redaction telemetry.
 
-## Installation & Quickstart
+## Installation for Users
 
-### 1. Initialize Root Keys & Policy
-Run `init` to generate your root Ed25519 signing keys (`pangolin.key`, `pangolin.pub`) and a default `pangolin.yaml`:
+### Option A: Download Pre-Built Binaries (Recommended)
+Head over to the [GitHub Releases](https://github.com/Leonidas144k/pangolin/releases) page and download the binary for your operating system (Linux, macOS, or Windows).
+
+### Option B: Build From Source
+If you have Go installed, you can clone and build the binary directly:
 ```bash
-pangolin init
+git clone [https://github.com/Leonidas144k/pangolin.git](https://github.com/Leonidas144k/pangolin.git)
+cd pangolin
+go build -o pangolin ./cmd/pangolin
