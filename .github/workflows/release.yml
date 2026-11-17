@@ -1,0 +1,42 @@
+name: Release Pangolin
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    name: Build & Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.23'
+
+    - name: Run Tests
+      run: go test ./...
+
+    - name: Build Binaries
+      env:
+        CGO_ENABLED: 0
+      run: |
+        mkdir -p build/
+        GOOS=linux GOARCH=amd64 go build -o build/pangolin-linux-amd64 ./cmd/pangolin
+        GOOS=darwin GOARCH=amd64 go build -o build/pangolin-darwin-amd64 ./cmd/pangolin
+        GOOS=darwin GOARCH=arm64 go build -o build/pangolin-darwin-arm64 ./cmd/pangolin
+        GOOS=windows GOARCH=amd64 go build -o build/pangolin-windows-amd64.exe ./cmd/pangolin
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: build/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
