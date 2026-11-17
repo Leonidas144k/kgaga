@@ -1,0 +1,5 @@
+/pangolin
+pangolin.key
+*.log
+.env
+dist/

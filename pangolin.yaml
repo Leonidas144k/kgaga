@@ -1,0 +1,14 @@
+version: "1"
+redact_secrets: true
+
+mcp:
+  allowed_tools: ["search", "read_file", "postgres.query"]
+  denied_tools: ["execute_shell", "drop_table"]
+
+rules:
+  - path_prefix: "/api/db"
+    allowed_scopes: ["db:read", "admin"]
+    deny_methods: ["DELETE"]
+  - path_prefix: "/api/payments"
+    allowed_scopes: ["payments:write", "admin"]
+    deny_methods: []
