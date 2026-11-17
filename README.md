@@ -29,7 +29,8 @@ If you have Go installed, you can clone and build the binary directly:
 ```bash
 git clone [https://github.com/Leonidas144k/pangolin.git](https://github.com/Leonidas144k/pangolin.git)
 cd pangolin
-go build -o pangolin ./cmd/pangolin### 2. Mint an Agent Passport
+go build -o pangolin ./cmd/pangolin
+
 
 ### 2. Mint an Agent Passport
 Generate a short-lived, cryptographically signed token bound to specific agent capabilities:
