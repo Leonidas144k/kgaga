@@ -31,6 +31,7 @@ git clone [https://github.com/Leonidas144k/pangolin.git](https://github.com/Leon
 cd pangolin
 go build -o pangolin ./cmd/pangolin### 2. Mint an Agent Passport
 
+### 2. Mint an Agent Passport
 Generate a short-lived, cryptographically signed token bound to specific agent capabilities:
 ```bash
 TOKEN=$(pangolin mint --agent "support-bot" --owner "ops@company.com" --scopes "mcp:tool:search,db:read")
