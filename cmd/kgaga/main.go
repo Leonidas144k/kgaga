@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -52,18 +54,44 @@ func main() {
 		owner := fs.String("owner", "ops@company.com", "Human or service owner")
 		scopes := fs.String("scopes", "db:read", "Comma-separated scopes")
 		ttl := fs.Duration("ttl", 15*time.Minute, "Passport validity duration")
+		audience := fs.String("audience", "", "Required service identifier")
 		fs.Parse(os.Args[2:])
 
-		token, err := passport.Mint("kgaga.key", *agent, *owner, strings.Split(*scopes, ","), *ttl)
+		token, err := passport.MintV2("kgaga.key", *agent, *owner, strings.Split(*scopes, ","), *audience, *ttl)
 		if err != nil {
 			log.Fatalf("mint failed: %v", err)
 		}
 		fmt.Println(token)
 
+	case "verify":
+		fs := flag.NewFlagSet("verify", flag.ExitOnError)
+		audience := fs.String("audience", "", "Required service identifier")
+		fs.Parse(os.Args[2:])
+		// Read the token from stdin rather than command-line arguments.
+		raw, err := io.ReadAll(io.LimitReader(os.Stdin, (16<<10)+2))
+		if err != nil {
+			log.Fatalf("read passport failed: %v", err)
+		}
+		if len(raw) >= (16<<10)+2 {
+			log.Fatal("passport input exceeds size limit")
+		}
+		key, err := passport.LoadPublicKey("kgaga.pub")
+		if err != nil {
+			log.Fatalf("load public key failed: %v", err)
+		}
+		claims, err := passport.VerifyV2(strings.TrimSpace(string(raw)), key, *audience)
+		if err != nil {
+			log.Fatal("passport verification failed")
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(claims); err != nil {
+			log.Fatalf("write claims failed: %v", err)
+		}
+
 	case "proxy":
 		fs := flag.NewFlagSet("proxy", flag.ExitOnError)
 		listen := fs.String("listen", "127.0.0.1:8080", "Address for Kgaga proxy to listen on")
 		target := fs.String("target", "http://localhost:3000", "Upstream backend or MCP server URL")
+		audience := fs.String("audience", "", "Required service identifier")
 		fs.Parse(os.Args[2:])
 
 		pubKey, err := passport.LoadPublicKey("kgaga.pub")
@@ -75,7 +103,7 @@ func main() {
 			log.Fatalf("load policy failed: %v", err)
 		}
 
-		handler, err := proxy.NewHandler(*target, pubKey, cfg)
+		handler, err := proxy.NewHandlerForAudience(*target, pubKey, cfg, *audience)
 		if err != nil {
 			log.Fatalf("proxy setup failed: %v", err)
 		}
@@ -133,7 +161,8 @@ func printUsage() {
 
 Usage:
   kgaga init                                                Generate root Ed25519 keys & kgaga.yaml
-  kgaga mint --agent <id> --owner <email> --scopes <s1,s2>  Mint an Agent Passport
-  kgaga proxy --listen 127.0.0.1:8080 --target <url>                 Start the security gateway
+  kgaga mint --agent <id> --owner <email> --scopes <s1,s2> --audience <service>  Mint an Agent Passport
+  kgaga verify --audience <service>                         Verify a passport from stdin
+  kgaga proxy --listen 127.0.0.1:8080 --target <url> --audience <service>                 Start the security gateway
   kgaga wrap -- <command> [args...]                         Wrap a local stdio MCP server`)
 }

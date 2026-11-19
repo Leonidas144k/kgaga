@@ -24,3 +24,7 @@ MCP transport compliance, strict policy matching, authenticated stdio, response 
 Managed control plane, SDKs, enterprise pilots, independent security assessment, commercial launch. No production-ready claim before release gates are met.
 
 The CLI binds to loopback by default. Explicit non-loopback deployment needs TLS and network access controls. Full streaming, response limits, replay resistance, revocation and authenticated stdio remain open.
+
+### Identity increment 1
+
+Implemented strict v2 issuance and verification, key thumbprints, unique credential IDs, mandatory time claims, maximum TTL, exact single audience, CLI verification and audience-bound HTTP gateway. Legacy tokens require reissuance; no CLI fallback. Tests pending CI. Key rotation, revocation, agent registry and proof of possession remain outstanding.

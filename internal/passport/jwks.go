@@ -63,3 +63,17 @@ func JWKSForKey(pubKey ed25519.PublicKey) (*JWKS, error) {
 		},
 	}, nil
 }
+
+// JWKSForKeyV2 uses the public-key thumbprint carried by v2 passports.
+func JWKSForKeyV2(pubKey ed25519.PublicKey) (*JWKS, error) {
+	jwks, err := JWKSForKey(pubKey)
+	if err != nil {
+		return nil, err
+	}
+	kid, err := KeyID(pubKey)
+	if err != nil {
+		return nil, err
+	}
+	jwks.Keys[0].Kid = kid
+	return jwks, nil
+}

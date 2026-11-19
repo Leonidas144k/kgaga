@@ -37,7 +37,20 @@ func emitAudit(ev AuditEvent) {
 
 const maxRequestBytes = 1 << 20
 
+// NewHandler retains the legacy verifier for explicit internal compatibility.
 func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) (http.Handler, error) {
+	return newHandler(targetURL, pubKey, cfg, "")
+}
+
+// NewHandlerForAudience enforces v2 passports without a legacy fallback.
+func NewHandlerForAudience(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string) (http.Handler, error) {
+	if err := passport.ValidateAudience(audience); err != nil {
+		return nil, err
+	}
+	return newHandler(targetURL, pubKey, cfg, audience)
+}
+
+func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string) (http.Handler, error) {
 	target, err := url.Parse(targetURL)
 	if err != nil {
 		return nil, err
@@ -52,11 +65,26 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 	// Copy the supplied key so later caller mutations cannot desynchronise JWKS.
 	pubKey = append(ed25519.PublicKey(nil), pubKey...)
 	jwks, err := passport.JWKSForKey(pubKey)
+	if audience != "" {
+		jwks, err = passport.JWKSForKeyV2(pubKey)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	rp := httputil.NewSingleHostReverseProxy(target)
+	rp := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.SetURL(target)
+			pr.SetXForwarded()
+			// These values have already been overwritten with verified claims.
+			// Add them after hop-by-hop header stripping.
+			for _, name := range []string{"X-Pangolin-Verified-Agent", "X-Pangolin-Agent-Owner", "X-Kgaga-Verified-Agent", "X-Kgaga-Agent-Owner"} {
+				pr.Out.Header.Set(name, pr.In.Header.Get(name))
+			}
+			pr.Out.Header.Del("X-Agent-Passport")
+			pr.Out.Header.Del("X-Kgaga-Passport")
+		},
+	}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/.well-known/jwks.json", func(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +93,11 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		tokens := r.Header.Values("X-Agent-Passport")
+		if len(tokens) > 1 {
+			http.Error(w, "ambiguous agent passport", http.StatusBadRequest)
+			return
+		}
 		rawToken := r.Header.Get("X-Agent-Passport")
 		if rawToken == "" {
 			emitAudit(AuditEvent{Method: r.Method, Path: r.URL.Path, Decision: "BLOCK", Reason: "missing X-Agent-Passport header"})
@@ -72,9 +105,15 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 			return
 		}
 
-		claims, err := passport.Verify(rawToken, pubKey)
+		var claims *passport.AgentClaims
+		var err error
+		if audience != "" {
+			claims, err = passport.VerifyV2(rawToken, pubKey, audience)
+		} else {
+			claims, err = passport.Verify(rawToken, pubKey)
+		}
 		if err != nil {
-			emitAudit(AuditEvent{Method: r.Method, Path: r.URL.Path, Decision: "BLOCK", Reason: err.Error()})
+			emitAudit(AuditEvent{Method: r.Method, Path: r.URL.Path, Decision: "BLOCK", Reason: "passport verification failed"})
 			http.Error(w, `{"error":"Kgaga: invalid or expired agent passport"}`, http.StatusForbidden)
 			return
 		}
@@ -141,6 +180,8 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 
 		r.Header.Set("X-Pangolin-Verified-Agent", claims.AgentID)
 		r.Header.Set("X-Pangolin-Agent-Owner", claims.Owner)
+		r.Header.Set("X-Kgaga-Verified-Agent", claims.AgentID)
+		r.Header.Set("X-Kgaga-Agent-Owner", claims.Owner)
 
 		emitAudit(AuditEvent{
 			AgentID: claims.AgentID, Owner: claims.Owner, Method: r.Method,

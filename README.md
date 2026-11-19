@@ -78,7 +78,7 @@ The examples below assume `kgaga` is on your `PATH`. To run it directly from the
 
 ### Mint an Agent Passport
 
-Generate a short-lived, cryptographically signed token bound to an agent, an owner, and specific permission scopes.
+Run `kgaga init` once in a dedicated new directory before these examples. Generate a short-lived signed token bound to an explicit service audience, an agent, an owner, and permission scopes. Protect the private signing key; its holder can mint any identity or scope.
 
 **Linux and macOS (Bash)**
 
@@ -86,25 +86,33 @@ Generate a short-lived, cryptographically signed token bound to an agent, an own
 TOKEN=$(kgaga mint \
   --agent "support-bot" \
   --owner "ops@company.com" \
-  --scopes "mcp:tool:search,db:read")
-echo "$TOKEN"
+  --scopes "mcp:tool:search,db:read" --audience "support-api")
+printf '%s' "$TOKEN" | kgaga verify --audience "support-api"
 ```
 
 **Windows (PowerShell)**
 
 ```powershell
-$TOKEN = kgaga mint --agent "support-bot" --owner "ops@company.com" --scopes "mcp:tool:search,db:read"
-$TOKEN
+$TOKEN = kgaga mint --agent "support-bot" --owner "ops@company.com" --scopes "mcp:tool:search,db:read" --audience "support-api"
+$TOKEN | kgaga verify --audience "support-api"
 ```
 
 Replace the example agent name, owner, and scopes with the values required for your agent.
 
+### Start an audience-bound gateway
+
+```bash
+kgaga proxy --listen 127.0.0.1:8080 --target http://localhost:3000 --audience support-api
+```
+
+Use a distinct service identifier per trust boundary, and use the same audience for issuance and gateway verification. Audiences are explicit identifiers, not inferred from untrusted HTTP headers. Passports use Ed25519, a key thumbprint, a random credential ID, and mandatory time claims; default TTL is 15 minutes, maximum 1 hour. Unique IDs are not replay protection. Revocation, key rotation, proof of possession, and authenticated stdio remain future work. The gateway strips the passport header before forwarding, and sets verified identity headers from signed claims; upstream services must only trust these headers on an authenticated, isolated gateway connection. Use only in controlled testing, not production.
+
 ## Migration from Pangolin v0.1
 
-This is an early-stage security prototype, not production-ready. The stdio wrapper does not authenticate callers or enforce full passport scopes. HTTP verification still uses the legacy `pangolin-ca` issuer, `pangolin-root-1` JWKS key ID, `X-Agent-Passport` input, and `X-Pangolin-Verified-Agent` / `X-Pangolin-Agent-Owner` upstream headers for compatibility. The legacy redaction marker is also preserved. These are not trademark or identity verification claims.
+This is an early-stage security prototype, not production-ready. The stdio wrapper does not authenticate callers or enforce full passport scopes. The current CLI requires v2 passports issued by `kgaga-ca`, with a key thumbprint and explicit audience. Legacy passports are rejected; reissue them before upgrading. The legacy internal verifier is retained for regression coverage, not exposed as a CLI fallback. The HTTP input remains `X-Agent-Passport`. Upstream identity headers are `X-Kgaga-Verified-Agent` / `X-Kgaga-Agent-Owner`; the legacy Pangolin equivalents are also emitted for compatibility. The legacy redaction marker is also preserved. These are not trademark or identity verification claims.
 
 Before switching branches, back up your existing key files and policy securely outside the repository. To preserve an existing identity, copy the matching private and public keys to `kgaga.key` (mode 0600) and `kgaga.pub` and migrate your policy to `kgaga.yaml`. Do not run init over an existing identity. The tracked legacy `pangolin.pub` is historical, not a trusted default for new installations. For a new installation, run `kgaga init` in a dedicated directory. Never commit private keys or bearer tokens.
 
-The Go module now uses `github.com/Leonidas144k/kgaga`; repository rename must be completed before external module installation. Planned website: https://kgaga.afrosoft.co.za.
+The Go module now uses `github.com/Leonidas144k/kgaga`; the GitHub repository has been renamed. Planned website: https://kgaga.afrosoft.co.za.
 
 See [the development roadmap](docs/roadmap.md) for planned security work.

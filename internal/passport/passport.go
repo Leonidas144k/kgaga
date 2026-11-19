@@ -43,22 +43,31 @@ func GenerateKeyPair(privPath, pubPath string) error {
 	return os.WriteFile(pubPath, pubPEM, 0644)
 }
 
-func Mint(privPath, agentID, owner string, scopes []string, ttl time.Duration) (string, error) {
+func loadPrivateKey(privPath string) (ed25519.PrivateKey, error) {
 	raw, err := os.ReadFile(privPath)
 	if err != nil {
-		return "", fmt.Errorf("read private key: %w", err)
+		return nil, fmt.Errorf("read private key: %w", err)
 	}
 	block, _ := pem.Decode(raw)
 	if block == nil {
-		return "", errors.New("invalid PEM private key")
+		return nil, errors.New("invalid PEM private key")
 	}
 	parsedKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	privKey, ok := parsedKey.(ed25519.PrivateKey)
 	if !ok {
-		return "", errors.New("key is not Ed25519")
+		return nil, errors.New("key is not Ed25519")
+	}
+
+	return privKey, nil
+}
+
+func Mint(privPath, agentID, owner string, scopes []string, ttl time.Duration) (string, error) {
+	privKey, err := loadPrivateKey(privPath)
+	if err != nil {
+		return "", err
 	}
 
 	now := time.Now()
@@ -99,6 +108,9 @@ func LoadPublicKey(pubPath string) (ed25519.PublicKey, error) {
 }
 
 func Verify(tokenStr string, pubKey ed25519.PublicKey) (*AgentClaims, error) {
+	if len(pubKey) != ed25519.PublicKeySize {
+		return nil, errors.New("invalid Ed25519 public key length")
+	}
 	claims := &AgentClaims{}
 	token, err := jwt.ParseWithClaims(
 		tokenStr,
@@ -108,8 +120,11 @@ func Verify(tokenStr string, pubKey ed25519.PublicKey) (*AgentClaims, error) {
 		jwt.WithIssuer("pangolin-ca"),
 		jwt.WithExpirationRequired(),
 	)
-	if err != nil || !token.Valid {
+	if err != nil {
 		return nil, fmt.Errorf("invalid agent passport: %w", err)
+	}
+	if token == nil || !token.Valid {
+		return nil, errors.New("invalid agent passport")
 	}
 	return claims, nil
 }
