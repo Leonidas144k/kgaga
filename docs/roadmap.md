@@ -7,8 +7,8 @@ Kgaga is AFROSOFT's agent identity and security project. Preserve the Go core an
 - [x] Rename CLI, module, policy configuration and release artifact names.
 - [ ] Rename repository through GitHub settings, add approved branding assets, validate trademark.
 - [ ] Build, vet, race-test and review migration from v0.1; do not publish until green.
-- [ ] Bound HTTP request size and read errors; configure server timeouts, align JWKS with the actual verification key, validate upstream targets.
-- [ ] Test malformed MCP calls, mismatched headers, denied scopes, invalid/expired signatures and default deny.
+- [x] Implement initial HTTP request limit (1 MiB), read errors, header/read/idle timeouts, matching JWKS key and upstream URL checks; verify in CI.
+- [x] Add regression tests for malformed MCP calls, mismatched headers, denied scopes, invalid/expired signatures and default deny; execution pending CI.
 - [ ] Threat model: malicious agents, untrusted MCP servers, token theft and replay, policy bypass, leaked secrets, compromised key storage and operator error. Treat stdio as experimental until authenticated and fail-closed.
 
 ## v0.3.0 — identity
@@ -22,3 +22,5 @@ MCP transport compliance, strict policy matching, authenticated stdio, response 
 ## Later
 
 Managed control plane, SDKs, enterprise pilots, independent security assessment, commercial launch. No production-ready claim before release gates are met.
+
+The CLI binds to loopback by default. Explicit non-loopback deployment needs TLS and network access controls. Full streaming, response limits, replay resistance, revocation and authenticated stdio remain open.

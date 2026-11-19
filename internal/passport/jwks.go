@@ -40,6 +40,14 @@ func GetJWKS(pubPath string) (*JWKS, error) {
 		return nil, errors.New("not an Ed25519 public key")
 	}
 
+	return JWKSForKey(pubKey)
+}
+
+// JWKSForKey publishes the same key used by the verifier.
+func JWKSForKey(pubKey ed25519.PublicKey) (*JWKS, error) {
+	if len(pubKey) != ed25519.PublicKeySize {
+		return nil, errors.New("invalid Ed25519 public key length")
+	}
 	// Ed25519 public keys are raw 32-byte arrays in JWK 'x' parameter (base64url encoded without padding)
 	xEncoded := base64.RawURLEncoding.EncodeToString(pubKey)
 

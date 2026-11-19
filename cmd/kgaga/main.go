@@ -62,7 +62,7 @@ func main() {
 
 	case "proxy":
 		fs := flag.NewFlagSet("proxy", flag.ExitOnError)
-		listen := fs.String("listen", ":8080", "Address for Kgaga proxy to listen on")
+		listen := fs.String("listen", "127.0.0.1:8080", "Address for Kgaga proxy to listen on")
 		target := fs.String("target", "http://localhost:3000", "Upstream backend or MCP server URL")
 		fs.Parse(os.Args[2:])
 
@@ -81,7 +81,16 @@ func main() {
 		}
 
 		fmt.Fprintf(os.Stderr, "Kgaga Gateway active on %s -> %s\n", *listen, *target)
-		log.Fatal(http.ListenAndServe(*listen, handler))
+		server := &http.Server{
+			Addr:              *listen,
+			Handler:           handler,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			IdleTimeout:       60 * time.Second,
+			MaxHeaderBytes:    32 << 10,
+		}
+		// Streaming responses require a deliberate write-deadline strategy.
+		log.Fatal(server.ListenAndServe())
 
 	case "wrap":
 		args := []string{}
@@ -125,6 +134,6 @@ func printUsage() {
 Usage:
   kgaga init                                                Generate root Ed25519 keys & kgaga.yaml
   kgaga mint --agent <id> --owner <email> --scopes <s1,s2>  Mint an Agent Passport
-  kgaga proxy --listen :8080 --target <url>                 Start the security gateway
+  kgaga proxy --listen 127.0.0.1:8080 --target <url>                 Start the security gateway
   kgaga wrap -- <command> [args...]                         Wrap a local stdio MCP server`)
 }

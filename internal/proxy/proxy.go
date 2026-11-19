@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -34,8 +35,23 @@ func emitAudit(ev AuditEvent) {
 	log.Println(string(b))
 }
 
+const maxRequestBytes = 1 << 20
+
 func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) (http.Handler, error) {
 	target, err := url.Parse(targetURL)
+	if err != nil {
+		return nil, err
+	}
+
+	if (target.Scheme != "http" && target.Scheme != "https") || target.Hostname() == "" || target.User != nil || target.Fragment != "" {
+		return nil, errors.New("upstream must be an HTTP(S) URL with a host and no userinfo or fragment")
+	}
+	if cfg == nil {
+		return nil, errors.New("policy configuration is required")
+	}
+	// Copy the supplied key so later caller mutations cannot desynchronise JWKS.
+	pubKey = append(ed25519.PublicKey(nil), pubKey...)
+	jwks, err := passport.JWKSForKey(pubKey)
 	if err != nil {
 		return nil, err
 	}
@@ -44,11 +60,6 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/.well-known/jwks.json", func(w http.ResponseWriter, r *http.Request) {
-		jwks, err := passport.GetJWKS("kgaga.pub")
-		if err != nil {
-			http.Error(w, `{"error":"failed to load jwks"}`, http.StatusInternalServerError)
-			return
-		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(jwks)
 	})
@@ -70,7 +81,19 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 
 		var bodyBytes []byte
 		if r.Body != nil {
-			bodyBytes, _ = io.ReadAll(r.Body)
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
+			defer r.Body.Close()
+			bodyBytes, err = io.ReadAll(r.Body)
+			if err != nil {
+				status := http.StatusBadRequest
+				var tooLarge *http.MaxBytesError
+				if errors.As(err, &tooLarge) {
+					status = http.StatusRequestEntityTooLarge
+				}
+				emitAudit(AuditEvent{AgentID: claims.AgentID, Owner: claims.Owner, Method: r.Method, Path: r.URL.Path, Decision: "BLOCK", Reason: "request body rejected", Scopes: claims.Scopes})
+				http.Error(w, "request body rejected", status)
+				return
+			}
 		}
 
 		isMCP := r.URL.Path == "/mcp" || r.Header.Get("MCP-Protocol-Version") != "" || r.Header.Get("Mcp-Method") != ""
