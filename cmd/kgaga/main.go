@@ -14,6 +14,7 @@ import (
 	"github.com/Leonidas144k/kgaga/internal/passport"
 	"github.com/Leonidas144k/kgaga/internal/policy"
 	"github.com/Leonidas144k/kgaga/internal/proxy"
+	"github.com/Leonidas144k/kgaga/internal/revocation"
 )
 
 func main() {
@@ -63,8 +64,28 @@ func main() {
 		}
 		fmt.Println(token)
 
+	case "revocations-init":
+		fs := flag.NewFlagSet("revocations-init", flag.ExitOnError)
+		dir := fs.String("revocations", revocation.DefaultDir, "Revocation store directory")
+		fs.Parse(os.Args[2:])
+		if err := revocation.Init(*dir); err != nil {
+			log.Fatalf("create revocation store failed: %v", err)
+		}
+		fmt.Println("Initialized revocation store")
+
+	case "revoke":
+		fs := flag.NewFlagSet("revoke", flag.ExitOnError)
+		dir := fs.String("revocations", revocation.DefaultDir, "Revocation store directory")
+		id := fs.String("id", "", "Passport credential ID (jti)")
+		fs.Parse(os.Args[2:])
+		store, err := revocation.Open(*dir)
+		if err != nil { log.Fatalf("open revocation store failed: %v", err) }
+		if err := store.Revoke(*id); err != nil { log.Fatalf("revoke failed: %v", err) }
+		fmt.Println("Passport revoked:", *id)
+
 	case "verify":
 		fs := flag.NewFlagSet("verify", flag.ExitOnError)
+		dir := fs.String("revocations", revocation.DefaultDir, "Revocation store directory")
 		audience := fs.String("audience", "", "Required service identifier")
 		fs.Parse(os.Args[2:])
 		// Read the token from stdin rather than command-line arguments.
@@ -83,12 +104,16 @@ func main() {
 		if err != nil {
 			log.Fatal("passport verification failed")
 		}
+		store, err := revocation.Open(*dir)
+		if err != nil { log.Fatalf("open revocation store failed: %v", err) }
+		if err := store.Check(claims.ID); err != nil { log.Fatalf("passport rejected: %v", err) }
 		if err := json.NewEncoder(os.Stdout).Encode(claims); err != nil {
 			log.Fatalf("write claims failed: %v", err)
 		}
 
 	case "proxy":
 		fs := flag.NewFlagSet("proxy", flag.ExitOnError)
+		dir := fs.String("revocations", revocation.DefaultDir, "Revocation store directory")
 		listen := fs.String("listen", "127.0.0.1:8080", "Address for Kgaga proxy to listen on")
 		target := fs.String("target", "http://localhost:3000", "Upstream backend or MCP server URL")
 		audience := fs.String("audience", "", "Required service identifier")
@@ -103,7 +128,9 @@ func main() {
 			log.Fatalf("load policy failed: %v", err)
 		}
 
-		handler, err := proxy.NewHandlerForAudience(*target, pubKey, cfg, *audience)
+		store, err := revocation.Open(*dir)
+		if err != nil { log.Fatalf("open revocation store failed: %v", err) }
+		handler, err := proxy.NewHandlerForAudience(*target, pubKey, cfg, *audience, store)
 		if err != nil {
 			log.Fatalf("proxy setup failed: %v", err)
 		}
@@ -162,7 +189,9 @@ func printUsage() {
 Usage:
   kgaga init                                                Generate root Ed25519 keys & kgaga.yaml
   kgaga mint --agent <id> --owner <email> --scopes <s1,s2> --audience <service>  Mint an Agent Passport
-  kgaga verify --audience <service>                         Verify a passport from stdin
+  kgaga revocations-init                                    Initialize the local revocation store once
+  kgaga revoke --id <jti>                                    Revoke a passport
+  kgaga verify --audience <service>                          Verify a passport from stdin and check revocation
   kgaga proxy --listen 127.0.0.1:8080 --target <url> --audience <service>                 Start the security gateway
   kgaga wrap -- <command> [args...]                         Wrap a local stdio MCP server`)
 }

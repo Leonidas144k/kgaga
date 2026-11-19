@@ -78,7 +78,7 @@ The examples below assume `kgaga` is on your `PATH`. To run it directly from the
 
 ### Mint an Agent Passport
 
-Run `kgaga init` once in a dedicated new directory before these examples. Generate a short-lived signed token bound to an explicit service audience, an agent, an owner, and permission scopes. Protect the private signing key; its holder can mint any identity or scope.
+Run `kgaga init` and then `kgaga revocations-init` once in a dedicated new directory before these examples. For an existing v2 development installation, only initialize the revocation store once; do not regenerate keys. Generate a short-lived signed token bound to an explicit service audience, an agent, an owner, and permission scopes. Protect the private signing key; its holder can mint any identity or scope.
 
 **Linux and macOS (Bash)**
 
@@ -105,7 +105,19 @@ Replace the example agent name, owner, and scopes with the values required for y
 kgaga proxy --listen 127.0.0.1:8080 --target http://localhost:3000 --audience support-api
 ```
 
-Use a distinct service identifier per trust boundary, and use the same audience for issuance and gateway verification. Audiences are explicit identifiers, not inferred from untrusted HTTP headers. Passports use Ed25519, a key thumbprint, a random credential ID, and mandatory time claims; default TTL is 15 minutes, maximum 1 hour. Unique IDs are not replay protection. Revocation, key rotation, proof of possession, and authenticated stdio remain future work. The gateway strips the passport header before forwarding, and sets verified identity headers from signed claims; upstream services must only trust these headers on an authenticated, isolated gateway connection. Use only in controlled testing, not production.
+Use a distinct service identifier per trust boundary, and use the same audience for issuance and gateway verification. Audiences are explicit identifiers, not inferred from untrusted HTTP headers. Passports use Ed25519, a key thumbprint, a random credential ID, and mandatory time claims; default TTL is 15 minutes, maximum 1 hour. Unique IDs are not replay protection. Single-host passport revocation is now enforced by the CLI and audience-bound gateway. Key rotation, proof of possession, distributed revocation, and authenticated stdio remain future work. The gateway strips the passport header before forwarding, and sets verified identity headers from signed claims; upstream services must only trust these headers on an authenticated, isolated gateway connection. Use only in controlled testing, not production.
+
+### Revoke a passport
+
+The verified claims returned by `kgaga verify` include a `jti` field. An authorized operator can invalidate that identifier:
+
+```bash
+kgaga revoke --id <jti>
+```
+
+Use the actual 32-character lowercase hexadecimal ID. Subsequent CLI verification fails, and gateway requests using the revoked passport return HTTP 403. A missing or replaced store fails closed (HTTP 503 on the gateway). All three commands (`verify`, `proxy`, and `revoke`) must use the same local directory, configurable via `--revocations`. The default is `kgaga-revocations` relative to the working directory.
+
+Keep the store and its parent directory under trusted operator control, backed up, and outside source control. Do not recreate lost revocation state; restore it from trusted backup or retire the affected credentials. Records are retained indefinitely in this increment. This single-host design is not tamper-proof, does not synchronize across hosts, cannot cancel already admitted requests, and does not prevent replay of an unrevoked bearer token.
 
 ## Migration from Pangolin v0.1
 

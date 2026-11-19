@@ -15,12 +15,14 @@ import (
 	"github.com/Leonidas144k/kgaga/internal/mcp"
 	"github.com/Leonidas144k/kgaga/internal/passport"
 	"github.com/Leonidas144k/kgaga/internal/policy"
+	"github.com/Leonidas144k/kgaga/internal/revocation"
 )
 
 type AuditEvent struct {
 	Timestamp string   `json:"ts"`
 	AgentID   string   `json:"agent_id"`
 	Owner     string   `json:"owner"`
+	PassportID string  `json:"passport_id,omitempty"`
 	Method    string   `json:"method"`
 	Path      string   `json:"path"`
 	Decision  string   `json:"decision"`
@@ -39,15 +41,16 @@ const maxRequestBytes = 1 << 20
 
 // NewHandler retains the legacy verifier for explicit internal compatibility.
 func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) (http.Handler, error) {
-	return newHandler(targetURL, pubKey, cfg, "")
+	return newHandler(targetURL, pubKey, cfg, "", nil)
 }
 
 // NewHandlerForAudience enforces v2 passports without a legacy fallback.
-func NewHandlerForAudience(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string) (http.Handler, error) {
+func NewHandlerForAudience(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store) (http.Handler, error) {
 	if err := passport.ValidateAudience(audience); err != nil {
 		return nil, err
 	}
-	return newHandler(targetURL, pubKey, cfg, audience)
+	if err := store.Ready(); err != nil { return nil, err }
+	return newHandler(targetURL, pubKey, cfg, audience, store)
 }
 
 func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string) (http.Handler, error) {
@@ -118,6 +121,20 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			return
 		}
 
+		if audience != "" {
+			if err := store.Check(claims.ID); err != nil {
+				status := http.StatusServiceUnavailable
+				reason := "revocation store unavailable"
+				if errors.Is(err, revocation.ErrRevoked) {
+					status = http.StatusForbidden
+					reason = "passport revoked"
+				}
+				emitAudit(AuditEvent{AgentID: claims.AgentID, Owner: claims.Owner, PassportID: claims.ID, Method: r.Method, Path: r.URL.Path, Decision: "BLOCK", Reason: reason})
+				http.Error(w, reason, status)
+				return
+			}
+		}
+
 		var bodyBytes []byte
 		if r.Body != nil {
 			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
@@ -185,7 +202,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 
 		emitAudit(AuditEvent{
 			AgentID: claims.AgentID, Owner: claims.Owner, Method: r.Method,
-			Path: r.URL.Path, Decision: "ALLOW", Redacted: redacted, Scopes: claims.Scopes,
+			Path: r.URL.Path, Decision: "ALLOW", PassportID: claims.ID, Redacted: redacted, Scopes: claims.Scopes,
 		})
 
 		rp.ServeHTTP(w, r)

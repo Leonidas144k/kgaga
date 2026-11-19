@@ -3,6 +3,7 @@ package proxy
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"net/http/httptest"
 	"path/filepath"
 	"sync/atomic"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/Leonidas144k/kgaga/internal/passport"
 	"github.com/Leonidas144k/kgaga/internal/policy"
+	"github.com/Leonidas144k/kgaga/internal/revocation"
 )
 
 func TestAudienceGateway(t *testing.T) {
@@ -37,8 +39,13 @@ func TestAudienceGateway(t *testing.T) {
 	}))
 	defer up.Close()
 	cfg := &policy.Config{Rules:[]policy.Rule{{PathPrefix:"/api/db",AllowedScopes:[]string{"db:read"}}}}
-	if _,err := NewHandlerForAudience(up.URL,key,cfg,""); err == nil { t.Fatal("accepted empty audience") }
-	h,err := NewHandlerForAudience(up.URL,key,cfg,"service-a")
+	storePath:=filepath.Join(dir,"revocations")
+	if err:=revocation.Init(storePath); err!=nil { t.Fatal(err) }
+	store,err:=revocation.Open(storePath)
+	if err!=nil { t.Fatal(err) }
+	if _,err := NewHandlerForAudience(up.URL,key,cfg,"service-a",nil); err==nil { t.Fatal("accepted missing revocation store") }
+	if _,err := NewHandlerForAudience(up.URL,key,cfg,"",store); err == nil { t.Fatal("accepted empty audience") }
+	h,err := NewHandlerForAudience(up.URL,key,cfg,"service-a",store)
 	if err != nil { t.Fatal(err) }
 	for _,tc := range []struct{ name, token string; duplicate bool; want int }{
 		{"wrong audience",mint("service-b"),false,403},
@@ -59,7 +66,24 @@ func TestAudienceGateway(t *testing.T) {
 			if w.Code != tc.want { t.Fatalf("status %d want %d",w.Code,tc.want) }
 		})
 	}
-	if calls.Load()!=1 { t.Fatalf("upstream calls %d want 1",calls.Load()) }
+	// A previously accepted passport is rejected immediately after revocation.
+	raw:=mint("service-a")
+	claims,err:=passport.VerifyV2(raw,key,"service-a")
+	if err!=nil { t.Fatal(err) }
+	check:=func(token string,want int){
+		t.Helper()
+		r:=httptest.NewRequest("GET","/api/db",nil)
+		r.Header.Set("X-Agent-Passport",token)
+		w:=httptest.NewRecorder()
+		h.ServeHTTP(w,r)
+		if w.Code!=want { t.Fatalf("status %d want %d",w.Code,want) }
+	}
+	check(raw,204)
+	if err:=store.Revoke(claims.ID); err!=nil { t.Fatal(err) }
+	check(raw,403)
+	if err:=os.Rename(storePath,storePath+"-backup"); err!=nil { t.Fatal(err) }
+	check(mint("service-a"),503)
+	if calls.Load()!=2 { t.Fatalf("upstream calls %d want 2",calls.Load()) }
 	w:=httptest.NewRecorder()
 	h.ServeHTTP(w,httptest.NewRequest("GET","/.well-known/jwks.json",nil))
 	var jwks passport.JWKS

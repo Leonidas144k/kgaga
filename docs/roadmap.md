@@ -27,4 +27,8 @@ The CLI binds to loopback by default. Explicit non-loopback deployment needs TLS
 
 ### Identity increment 1
 
-Implemented strict v2 issuance and verification, key thumbprints, unique credential IDs, mandatory time claims, maximum TTL, exact single audience, CLI verification and audience-bound HTTP gateway. Legacy tokens require reissuance; no CLI fallback. Tests pending CI. Key rotation, revocation, agent registry and proof of possession remain outstanding.
+Implemented strict v2 issuance and verification, key thumbprints, unique credential IDs, mandatory time claims, maximum TTL, exact single audience, CLI verification and audience-bound HTTP gateway. Legacy tokens require reissuance; no CLI fallback. Increment 1 CI and local tests passed. Key rotation, agent registry and proof of possession remain outstanding.
+
+### Identity increment 2
+
+Local persistent passport revocation: explicit store initialization, exclusive per-ID markers, CLI revoke, check on CLI verify and audience-bound gateway, fail closed on store errors, and regression tests. No database or new dependencies. Distributed state, pruning, backups, power-loss durability, trusted operator access and replay resistance require further design. Tests pending CI.
