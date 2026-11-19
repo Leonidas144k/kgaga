@@ -10,8 +10,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/pangolin-sec/pangolin/internal/mcp"
-	"github.com/pangolin-sec/pangolin/internal/policy"
+	"github.com/Leonidas144k/kgaga/internal/mcp"
+	"github.com/Leonidas144k/kgaga/internal/policy"
 )
 
 // RunStdioProxy wraps a local child process (like an MCP server), inspecting stdio streams.
@@ -52,9 +52,9 @@ func RunStdioProxy(cmdPath string, cmdArgs []string, pubKey ed25519.PublicKey, c
 					if slicesContains(cfg.MCP.DeniedTools, toolName) {
 						emitAudit(AuditEvent{
 							AgentID: "local-stdio-agent", Method: "tools/call:" + toolName,
-							Decision: "BLOCK", Reason: "Denied by pangolin.yaml policy",
+							Decision: "BLOCK", Reason: "Denied by kgaga.yaml policy",
 						})
-						fmt.Printf(`{"jsonrpc":"2.0","error":{"code":-32603,"message":"Pangolin blocked tool: %s"},"id":%v}`+"\n", toolName, rpc.ID)
+						fmt.Printf(`{"jsonrpc":"2.0","error":{"code":-32603,"message":"Kgaga blocked tool: %s"},"id":%v}`+"\n", toolName, rpc.ID)
 						continue
 					}
 

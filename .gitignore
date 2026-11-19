@@ -1,5 +1,11 @@
-/pangolin
-pangolin.key
+/kgaga
+kgaga.key
 *.log
 .env
 dist/
+/pangolin
+/pangolin.exe
+/kgaga.exe
+pangolin.key
+kgaga.pub
+/build/

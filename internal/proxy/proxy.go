@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -11,9 +12,9 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/pangolin-sec/pangolin/internal/mcp"
-	"github.com/pangolin-sec/pangolin/internal/passport"
-	"github.com/pangolin-sec/pangolin/internal/policy"
+	"github.com/Leonidas144k/kgaga/internal/mcp"
+	"github.com/Leonidas144k/kgaga/internal/passport"
+	"github.com/Leonidas144k/kgaga/internal/policy"
 )
 
 type AuditEvent struct {
@@ -34,8 +35,23 @@ func emitAudit(ev AuditEvent) {
 	log.Println(string(b))
 }
 
+const maxRequestBytes = 1 << 20
+
 func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) (http.Handler, error) {
 	target, err := url.Parse(targetURL)
+	if err != nil {
+		return nil, err
+	}
+
+	if (target.Scheme != "http" && target.Scheme != "https") || target.Hostname() == "" || target.User != nil || target.Fragment != "" {
+		return nil, errors.New("upstream must be an HTTP(S) URL with a host and no userinfo or fragment")
+	}
+	if cfg == nil {
+		return nil, errors.New("policy configuration is required")
+	}
+	// Copy the supplied key so later caller mutations cannot desynchronise JWKS.
+	pubKey = append(ed25519.PublicKey(nil), pubKey...)
+	jwks, err := passport.JWKSForKey(pubKey)
 	if err != nil {
 		return nil, err
 	}
@@ -44,11 +60,6 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/.well-known/jwks.json", func(w http.ResponseWriter, r *http.Request) {
-		jwks, err := passport.GetJWKS("pangolin.pub")
-		if err != nil {
-			http.Error(w, `{"error":"failed to load jwks"}`, http.StatusInternalServerError)
-			return
-		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(jwks)
 	})
@@ -57,20 +68,32 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 		rawToken := r.Header.Get("X-Agent-Passport")
 		if rawToken == "" {
 			emitAudit(AuditEvent{Method: r.Method, Path: r.URL.Path, Decision: "BLOCK", Reason: "missing X-Agent-Passport header"})
-			http.Error(w, `{"error":"Pangolin: missing X-Agent-Passport"}`, http.StatusUnauthorized)
+			http.Error(w, `{"error":"Kgaga: missing X-Agent-Passport"}`, http.StatusUnauthorized)
 			return
 		}
 
 		claims, err := passport.Verify(rawToken, pubKey)
 		if err != nil {
 			emitAudit(AuditEvent{Method: r.Method, Path: r.URL.Path, Decision: "BLOCK", Reason: err.Error()})
-			http.Error(w, `{"error":"Pangolin: invalid or expired agent passport"}`, http.StatusForbidden)
+			http.Error(w, `{"error":"Kgaga: invalid or expired agent passport"}`, http.StatusForbidden)
 			return
 		}
 
 		var bodyBytes []byte
 		if r.Body != nil {
-			bodyBytes, _ = io.ReadAll(r.Body)
+			r.Body = http.MaxBytesReader(w, r.Body, maxRequestBytes)
+			defer r.Body.Close()
+			bodyBytes, err = io.ReadAll(r.Body)
+			if err != nil {
+				status := http.StatusBadRequest
+				var tooLarge *http.MaxBytesError
+				if errors.As(err, &tooLarge) {
+					status = http.StatusRequestEntityTooLarge
+				}
+				emitAudit(AuditEvent{AgentID: claims.AgentID, Owner: claims.Owner, Method: r.Method, Path: r.URL.Path, Decision: "BLOCK", Reason: "request body rejected", Scopes: claims.Scopes})
+				http.Error(w, "request body rejected", status)
+				return
+			}
 		}
 
 		isMCP := r.URL.Path == "/mcp" || r.Header.Get("MCP-Protocol-Version") != "" || r.Header.Get("Mcp-Method") != ""
@@ -92,7 +115,7 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 					AgentID: claims.AgentID, Owner: claims.Owner, Method: mcpInfo.Method + ":" + mcpInfo.ToolName,
 					Path: r.URL.Path, Decision: "BLOCK", Reason: reason, Scopes: claims.Scopes,
 				})
-				http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32603,"message":"Pangolin MCP block: `+reason+`"}}`, http.StatusForbidden)
+				http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32603,"message":"Kgaga MCP block: `+reason+`"}}`, http.StatusForbidden)
 				return
 			}
 		} else {
@@ -102,7 +125,7 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 					AgentID: claims.AgentID, Owner: claims.Owner, Method: r.Method,
 					Path: r.URL.Path, Decision: "BLOCK", Reason: reason, Scopes: claims.Scopes,
 				})
-				http.Error(w, `{"error":"Pangolin policy block: `+reason+`"}`, http.StatusForbidden)
+				http.Error(w, `{"error":"Kgaga policy block: `+reason+`"}`, http.StatusForbidden)
 				return
 			}
 		}
