@@ -1,4 +1,4 @@
-module github.com/pangolin-sec/pangolin
+module github.com/Leonidas144k/kgaga
 
 go 1.23.4
 

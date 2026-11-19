@@ -11,9 +11,9 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/pangolin-sec/pangolin/internal/mcp"
-	"github.com/pangolin-sec/pangolin/internal/passport"
-	"github.com/pangolin-sec/pangolin/internal/policy"
+	"github.com/Leonidas144k/kgaga/internal/mcp"
+	"github.com/Leonidas144k/kgaga/internal/passport"
+	"github.com/Leonidas144k/kgaga/internal/policy"
 )
 
 type AuditEvent struct {
@@ -44,7 +44,7 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/.well-known/jwks.json", func(w http.ResponseWriter, r *http.Request) {
-		jwks, err := passport.GetJWKS("pangolin.pub")
+		jwks, err := passport.GetJWKS("kgaga.pub")
 		if err != nil {
 			http.Error(w, `{"error":"failed to load jwks"}`, http.StatusInternalServerError)
 			return
@@ -57,14 +57,14 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 		rawToken := r.Header.Get("X-Agent-Passport")
 		if rawToken == "" {
 			emitAudit(AuditEvent{Method: r.Method, Path: r.URL.Path, Decision: "BLOCK", Reason: "missing X-Agent-Passport header"})
-			http.Error(w, `{"error":"Pangolin: missing X-Agent-Passport"}`, http.StatusUnauthorized)
+			http.Error(w, `{"error":"Kgaga: missing X-Agent-Passport"}`, http.StatusUnauthorized)
 			return
 		}
 
 		claims, err := passport.Verify(rawToken, pubKey)
 		if err != nil {
 			emitAudit(AuditEvent{Method: r.Method, Path: r.URL.Path, Decision: "BLOCK", Reason: err.Error()})
-			http.Error(w, `{"error":"Pangolin: invalid or expired agent passport"}`, http.StatusForbidden)
+			http.Error(w, `{"error":"Kgaga: invalid or expired agent passport"}`, http.StatusForbidden)
 			return
 		}
 
@@ -92,7 +92,7 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 					AgentID: claims.AgentID, Owner: claims.Owner, Method: mcpInfo.Method + ":" + mcpInfo.ToolName,
 					Path: r.URL.Path, Decision: "BLOCK", Reason: reason, Scopes: claims.Scopes,
 				})
-				http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32603,"message":"Pangolin MCP block: `+reason+`"}}`, http.StatusForbidden)
+				http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32603,"message":"Kgaga MCP block: `+reason+`"}}`, http.StatusForbidden)
 				return
 			}
 		} else {
@@ -102,7 +102,7 @@ func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) 
 					AgentID: claims.AgentID, Owner: claims.Owner, Method: r.Method,
 					Path: r.URL.Path, Decision: "BLOCK", Reason: reason, Scopes: claims.Scopes,
 				})
-				http.Error(w, `{"error":"Pangolin policy block: `+reason+`"}`, http.StatusForbidden)
+				http.Error(w, `{"error":"Kgaga policy block: `+reason+`"}`, http.StatusForbidden)
 				return
 			}
 		}

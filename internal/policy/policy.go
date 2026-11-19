@@ -59,7 +59,7 @@ func (c *Config) Authorize(method, path string, agentScopes []string) (bool, str
 	for _, r := range c.Rules {
 		if strings.HasPrefix(path, r.PathPrefix) {
 			if slices.Contains(r.DenyMethods, strings.ToUpper(method)) {
-				return false, "HTTP method explicitly denied by Pangolin policy"
+				return false, "HTTP method explicitly denied by Kgaga policy"
 			}
 			for _, needed := range r.AllowedScopes {
 				if slices.Contains(agentScopes, needed) {
@@ -69,17 +69,17 @@ func (c *Config) Authorize(method, path string, agentScopes []string) (bool, str
 			return false, "agent passport lacks required scope for " + r.PathPrefix
 		}
 	}
-	return false, "no matching Pangolin policy rule (default deny)"
+	return false, "no matching Kgaga policy rule (default deny)"
 }
 
 func (c *Config) AuthorizeMCP(method, toolName, requiredScope string, agentScopes []string) (bool, string) {
 	if toolName != "" && slices.Contains(c.MCP.DeniedTools, toolName) {
-		return false, "MCP tool explicitly denied by pangolin.yaml: " + toolName
+		return false, "MCP tool explicitly denied by kgaga.yaml: " + toolName
 	}
 
 	if toolName != "" && len(c.MCP.AllowedTools) > 0 {
 		if !slices.Contains(c.MCP.AllowedTools, toolName) && !slices.Contains(c.MCP.AllowedTools, "*") {
-			return false, "MCP tool not in pangolin.yaml allowlist: " + toolName
+			return false, "MCP tool not in kgaga.yaml allowlist: " + toolName
 		}
 	}
 

@@ -1,4 +1,4 @@
-name: Release Pangolin
+name: Release Kgaga
 
 on:
   push:
@@ -19,7 +19,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.23'
+        go-version-file: go.mod
 
     - name: Run Tests
       run: go test ./...
@@ -29,10 +29,10 @@ jobs:
         CGO_ENABLED: 0
       run: |
         mkdir -p build/
-        GOOS=linux GOARCH=amd64 go build -o build/pangolin-linux-amd64 ./cmd/pangolin
-        GOOS=darwin GOARCH=amd64 go build -o build/pangolin-darwin-amd64 ./cmd/pangolin
-        GOOS=darwin GOARCH=arm64 go build -o build/pangolin-darwin-arm64 ./cmd/pangolin
-        GOOS=windows GOARCH=amd64 go build -o build/pangolin-windows-amd64.exe ./cmd/pangolin
+        GOOS=linux GOARCH=amd64 go build -o build/kgaga-linux-amd64 ./cmd/kgaga
+        GOOS=darwin GOARCH=amd64 go build -o build/kgaga-darwin-amd64 ./cmd/kgaga
+        GOOS=darwin GOARCH=arm64 go build -o build/kgaga-darwin-arm64 ./cmd/kgaga
+        GOOS=windows GOARCH=amd64 go build -o build/kgaga-windows-amd64.exe ./cmd/kgaga
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
