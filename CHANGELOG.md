@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.4.0 gateway development
 
+- Require verified HTTPS upstream by default; private CA and client TLS credentials supported. Explicit literal-loopback HTTP opt-in; require TLS for non-loopback gateway binds.
+
 - Correct replay quota lock contention: bounded three-second acquisition, typed busy error and strengthened contention/duplicate tests; security ceilings and exclusive nonce writes unchanged.
 
 - Bound aggregate HTTP admission, active handlers, TCP/upstream connections and write time. Cap persistent replay reservations without pruning; reject shared replay/revocation directories. Offline recovery required after a crash lock.

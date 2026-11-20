@@ -43,12 +43,12 @@ func emitAudit(ev AuditEvent) {
 const maxRequestBytes = 1 << 20
 
 // NewHandler retains the legacy verifier for explicit internal compatibility.
-func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) (http.Handler, error) {
-	return newHandler(targetURL, pubKey, cfg, "", nil, nil, nil, nil)
+func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, options ...UpstreamTLSOptions) (http.Handler, error) {
+	return newHandler(targetURL, pubKey, cfg, "", nil, nil, nil, nil, options...)
 }
 
 // NewHandlerForAudience enforces v2 passports without a legacy fallback.
-func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, replay *revocation.Store) (http.Handler, error) {
+func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, replay *revocation.Store, options ...UpstreamTLSOptions) (http.Handler, error) {
 	if err := passport.ValidateAudience(audience); err != nil {
 		return nil, err
 	}
@@ -57,10 +57,10 @@ func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.C
 	if err:=trust.Ready(); err!=nil { return nil,err }
 	if err:=replay.Ready(); err!=nil { return nil,err }
 	if store.SameDirectory(replay) { return nil,errors.New("replay and revocation stores must be separate") }
-	return newHandler(targetURL, nil, cfg, audience, store, reg, trust, replay)
+	return newHandler(targetURL, nil, cfg, audience, store, reg, trust, replay,options...)
 }
 
-func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, trust *keyring.Store, replay *revocation.Store) (http.Handler, error) {
+func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, trust *keyring.Store, replay *revocation.Store, options ...UpstreamTLSOptions) (http.Handler, error) {
 	target, err := url.Parse(targetURL)
 	if err != nil {
 		return nil, err
@@ -70,6 +70,8 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		return nil, errors.New("upstream must be an HTTP(S) URL with a host and no userinfo or fragment")
 	}
 	if (target.Path!="" && target.Path!="/") || target.RawPath!="" || target.RawQuery!="" || target.ForceQuery || target.Opaque!="" { return nil,errors.New("upstream must be an origin URL without a base path or query") }
+	tlsConfig,err:=upstreamTLS(target,options...)
+	if err!=nil { return nil,err }
 	cfg,err=cfg.Snapshot()
 	if err!=nil { return nil,err }
 	// Copy the supplied key so later caller mutations cannot desynchronise JWKS.
@@ -85,6 +87,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 	limiter,err:=policy.NewRateLimiter(*cfg.RateLimit)
 	if err!=nil { return nil,err }
 	transport:=newUpstreamTransport()
+	transport.TLSClientConfig=tlsConfig
 	serveJWKS := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		current:=jwks

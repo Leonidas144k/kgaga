@@ -136,7 +136,7 @@ The parser rejects duplicate keys (including case-folded aliases as detected by 
 
 The HTTP gateway is no longer a transparent reverse proxy. It forwards only selected content/MCP headers and trusted identity headers, with a fixed Accept value. Client authorization, cookies and arbitrary headers are not forwarded. Upstream response headers are restricted to content type and selected MCP metadata; redirects, partial responses, encodings, trailers and streaming are unsupported. Nonempty payloads must be UTF-8 application/json or text/plain. Bodies are capped at 1 MiB in each direction; upstream response headers are capped at 32 KiB, response header wait at 10 seconds and total exchange at 30 seconds. HTTP MCP responses require a JSON-RPC 2.0 result/error with matching ID and HTTP 200, or an empty 202/204 for the supported notification. The HTTP exchange is buffered and inspected before any upstream bytes are sent to the client. Current credential lifecycle is checked again before response release; already dispatched side effects cannot be undone.
 
-The existing `redact_secrets: true` setting now blocks recognized secret patterns in request and response payloads, JSON-decoded keys/strings, request query and selected metadata rather than rewriting signed data. The authenticated stdio transport uses the same payload scanner. Patterns are heuristic and do not recognize all credentials, arbitrary encodings, split strings, attachments or indirect leakage. Setting the flag false disables secret-pattern checks, not text/JSON validation or size bounds. This development-only restriction may break existing REST and MCP clients. Upstream TLS/mTLS policy, admission concurrency, complete protocol schemas and response streaming remain outstanding.
+The existing `redact_secrets: true` setting now blocks recognized secret patterns in request and response payloads, JSON-decoded keys/strings, request query and selected metadata rather than rewriting signed data. The authenticated stdio transport uses the same payload scanner. Patterns are heuristic and do not recognize all credentials, arbitrary encodings, split strings, attachments or indirect leakage. Setting the flag false disables secret-pattern checks, not text/JSON validation or size bounds. This development-only restriction may break existing REST and MCP clients. Complete protocol schemas, response streaming and deployment-level transport assurance remain outstanding.
 
 ### Agent rate limiting
 
@@ -161,10 +161,24 @@ The dedicated replay directory now has a fixed 1,000,000 reservation ceiling. St
 
 These ceilings protect a single process, not a distributed deployment or the network perimeter. No per-IP fairness, global process cap, automated safe replay pruning or production DDoS protection is claimed. Use external firewall, OS limits and monitoring for controlled tests.
 
+### Secure HTTP transport
+
+HTTPS is required for upstream connections by default. Kgaga verifies certificate chains and the hostname/IP in the configured origin, with TLS 1.2 minimum and no insecure verification option. System roots are used unless `--upstream-ca` specifies a private PEM CA bundle, which replaces rather than extends the system trust pool. Use `--upstream-client-cert` and `--upstream-client-key` together for client authentication. For mutual TLS, configure the upstream server to require and verify the gateway certificate and authorize that certificate's identity; setting a client certificate alone cannot prove the server enforces client authentication. Upstreams must reject direct agent access and spoofed identity headers. Keys and CA files are loaded once at startup; rotate by restarting. No automatic rotation or certificate revocation (CRL/OCSP) enforcement is provided.
+
+Plaintext upstreams require `--allow-loopback-http` and a literal loopback IP (127.0.0.1 or ::1), not a DNS name. Do not use this for real sensitive data. Non-loopback gateway listeners require both `--tls-cert` and `--tls-key`; literal loopback listeners may use plaintext for synthetic testing. Listener TLS authenticates the gateway to clients; inbound agent authentication remains passport/proof based. Network perimeter isolation, trusted PKI, certificate lifecycle and independent review remain necessary.
+
+```bash
+# Example only; supply actual provisioned certificate paths.
+kgaga proxy --listen 127.0.0.1:8443 --target https://backend.example:443 \
+  --audience support-api --upstream-ca /secure/ca.pem \
+  --upstream-client-cert /secure/client.pem --upstream-client-key /secure/client.key \
+  --tls-cert /secure/gateway.pem --tls-key /secure/gateway.key
+```
+
 ### Start an audience-bound gateway (isolated test environment only)
 
 ```bash
-kgaga proxy --listen 127.0.0.1:8080 --target http://localhost:3000 --audience support-api
+kgaga proxy --listen 127.0.0.1:8080 --target http://127.0.0.1:3000 --allow-loopback-http --audience support-api
 ```
 
 Use a distinct service identifier per trust boundary, and use the same audience for issuance and gateway verification. Audiences are explicit identifiers, not inferred from untrusted HTTP headers. Passports use Ed25519, a key thumbprint, a random credential ID, and mandatory time claims; default TTL is 15 minutes, maximum 1 hour. Unique IDs are not replay protection. Single-host passport revocation is now enforced by the CLI and audience-bound gateway. Local operator-controlled key rotation is supported. Holder-bound HTTP request proofs and single-host replay protection are implemented; authenticated stdio is available in restricted lockstep mode; distributed revocation remains future work. The gateway strips the passport header before forwarding, and sets verified identity headers from signed claims; upstream services must only trust these headers on an authenticated, isolated gateway connection. Use only in controlled testing, not production.

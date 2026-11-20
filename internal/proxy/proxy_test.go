@@ -43,7 +43,7 @@ func TestGatewaySecurity(t *testing.T) {
 		MCP: policy.MCPPolicy{AllowedTools: []string{"search"}, DeniedTools: []string{"drop_table"}},
 		Rules: []policy.Rule{{PathPrefix: "/api/db", AllowedScopes: []string{"db:read"}, AllowedMethods: []string{"GET","HEAD"}, DenyMethods: []string{"DELETE"}}},
 	}
-	h, err := NewHandler(up.URL, key, cfg)
+	h, err := NewHandler(up.URL, key, cfg,UpstreamTLSOptions{AllowLoopbackHTTP:true})
 	if err != nil { t.Fatal(err) }
 	for _, tc := range []struct{name, method, path, token, body, mcpMethod string; want int}{
 		{"missing token", "GET", "/api/db", "", "", "", 401},
@@ -86,6 +86,6 @@ func TestInvalidGatewayConfiguration(t *testing.T) {
 	for _, target := range []string{"relative", "ftp://example.com", "http://user:pass@example.com", "http://"} {
 		if _, err := NewHandler(target, key, &policy.Config{Version:"2"}); err == nil { t.Fatalf("accepted %q", target) }
 	}
-	if _, err := NewHandler("http://localhost", nil, &policy.Config{Version:"2"}); err == nil { t.Fatal("accepted invalid key") }
-	if _, err := NewHandler("http://localhost", key, nil); err == nil { t.Fatal("accepted nil policy") }
+	if _, err := NewHandler("http://127.0.0.1", nil, &policy.Config{Version:"2"},UpstreamTLSOptions{AllowLoopbackHTTP:true}); err == nil { t.Fatal("accepted invalid key") }
+	if _, err := NewHandler("http://127.0.0.1", key, nil,UpstreamTLSOptions{AllowLoopbackHTTP:true}); err == nil { t.Fatal("accepted nil policy") }
 }

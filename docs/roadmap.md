@@ -88,3 +88,7 @@ Fixed aggregate HTTP admission and concurrency ceilings, capped accepted TCP and
 #### Increment 7 contention correction
 
 CI passed at 186079b but local race tests reproduced premature 100 ms replay quota lock failures under filesystem contention. Use one filesystem lock protocol with a three-second acquisition budget and typed busy error; remove the unbounded per-Store mutex queue. Test deliberate slow-writer contention, fail-closed timeout, duplicate nonce exclusion, persistent quota count and retry only the pre-reservation busy outcome in concurrent tests. Local/CI revalidation required.
+
+### Gateway increment 8
+
+Verified TLS 1.2+ upstream connections by default, optional private trust roots and client certificates, literal-loopback-only explicit HTTP opt-in, non-loopback listener TLS requirement, and TLS/mTLS negative tests. Increment 7 replay fix passed CI and repeated local race tests at d059a2f. Increment 8 validation pending. Upstream must enforce client certificate authorization and network isolation; no automatic rotation or CRL/OCSP enforcement.

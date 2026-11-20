@@ -58,7 +58,7 @@ func TestDelegatedGatewayParentLifecycle(t *testing.T) {
 		w.WriteHeader(204)
 	}))
 	defer up.Close()
-	h,err:=NewHandlerForAudience(up.URL,trust,&policy.Config{Version:"2",Rules:[]policy.Rule{{PathPrefix:"/api/db",AllowedScopes:[]string{"read"},AllowedMethods:[]string{"GET"}}}},"api",rev,reg,replay); if err!=nil { t.Fatal(err) }
+	h,err:=NewHandlerForAudience(up.URL,trust,&policy.Config{Version:"2",Rules:[]policy.Rule{{PathPrefix:"/api/db",AllowedScopes:[]string{"read"},AllowedMethods:[]string{"GET"}}}},"api",rev,reg,replay,UpstreamTLSOptions{AllowLoopbackHTTP:true}); if err!=nil { t.Fatal(err) }
 	check:=func(signer string,want int){
 		t.Helper()
 		r:=httptest.NewRequest("GET","/api/db",nil)

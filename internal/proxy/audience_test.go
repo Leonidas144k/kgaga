@@ -94,12 +94,12 @@ func TestAudienceGateway(t *testing.T) {
 	if err:=revocation.Init(replayPath); err!=nil { t.Fatal(err) }
 	replay,err:=revocation.Open(replayPath)
 	if err!=nil { t.Fatal(err) }
-	if _,err:=NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,reg,nil); err==nil { t.Fatal("accepted missing replay store") }
-	if _,err:=NewHandlerForAudience(up.URL,nil,cfg,"service-a",store,reg,replay); err==nil { t.Fatal("accepted absent trust store") }
-	if _,err:=NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,nil,replay); err==nil { t.Fatal("accepted absent registry") }
-	if _,err := NewHandlerForAudience(up.URL,trust,cfg,"service-a",nil,reg,replay); err==nil { t.Fatal("accepted missing revocation store") }
-	if _,err := NewHandlerForAudience(up.URL,trust,cfg,"",store,reg,replay); err == nil { t.Fatal("accepted empty audience") }
-	h,err := NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,reg,replay)
+	if _,err:=NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,reg,nil,UpstreamTLSOptions{AllowLoopbackHTTP:true}); err==nil { t.Fatal("accepted missing replay store") }
+	if _,err:=NewHandlerForAudience(up.URL,nil,cfg,"service-a",store,reg,replay,UpstreamTLSOptions{AllowLoopbackHTTP:true}); err==nil { t.Fatal("accepted absent trust store") }
+	if _,err:=NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,nil,replay,UpstreamTLSOptions{AllowLoopbackHTTP:true}); err==nil { t.Fatal("accepted absent registry") }
+	if _,err := NewHandlerForAudience(up.URL,trust,cfg,"service-a",nil,reg,replay,UpstreamTLSOptions{AllowLoopbackHTTP:true}); err==nil { t.Fatal("accepted missing revocation store") }
+	if _,err := NewHandlerForAudience(up.URL,trust,cfg,"",store,reg,replay,UpstreamTLSOptions{AllowLoopbackHTTP:true}); err == nil { t.Fatal("accepted empty audience") }
+	h,err := NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,reg,replay,UpstreamTLSOptions{AllowLoopbackHTTP:true})
 	if err != nil { t.Fatal(err) }
 	for _,tc := range []struct{ name, token string; duplicate bool; want int }{
 		{"wrong audience",mint("service-b"),false,403},
@@ -201,7 +201,7 @@ func TestAudienceGateway(t *testing.T) {
 	// authenticated path, including replacement passports and route changes.
 	limited:=*cfg
 	limited.RateLimit=&policy.RateLimitConfig{RequestsPerMinute:1,Burst:1,MaxAgents:2}
-	lh,err:=NewHandlerForAudience(up.URL,trust,&limited,"service-a",store,reg,replay)
+	lh,err:=NewHandlerForAudience(up.URL,trust,&limited,"service-a",store,reg,replay,UpstreamTLSOptions{AllowLoopbackHTTP:true})
 	if err!=nil { t.Fatal(err) }
 	limitedRequest:=func(token,target string,want int,signed bool) {
 		t.Helper()
@@ -228,7 +228,7 @@ func TestAudienceGateway(t *testing.T) {
 	if err:=reg.Register(registry.Agent{ID:"second-agent",Owner:"owner",Scopes:[]string{"db:read"},Audiences:[]string{"service-a"},HolderKey:encoded}); err!=nil { t.Fatal(err) }
 	other,err:=passport.MintBoundV2(priv,"second-agent","owner",[]string{"db:read"},"service-a",time.Minute,holder)
 	if err!=nil { t.Fatal(err) }
-	isolated,err:=NewHandlerForAudience(otherUp.URL,trust,&limited,"service-a",store,reg,replay)
+	isolated,err:=NewHandlerForAudience(otherUp.URL,trust,&limited,"service-a",store,reg,replay,UpstreamTLSOptions{AllowLoopbackHTTP:true})
 	if err!=nil { t.Fatal(err) }
 	for _,tc:=range []struct{token string;want int}{{mint("service-a"),204},{mint("service-a"),429},{other,204},{other,429}} {
 		r:=httptest.NewRequest("GET","/api/db",nil)

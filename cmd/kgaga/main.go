@@ -348,7 +348,13 @@ func main() {
 		registryDir := fs.String("registry",registry.DefaultDir,"Agent registry directory")
 		dir := fs.String("revocations", revocation.DefaultDir, "Revocation store directory")
 		listen := fs.String("listen", "127.0.0.1:8080", "Address for Kgaga proxy to listen on")
-		target := fs.String("target", "http://localhost:3000", "Upstream backend or MCP server URL")
+		target := fs.String("target", "https://127.0.0.1:3000", "Upstream backend or MCP server URL")
+		upstreamCA:=fs.String("upstream-ca","","Private upstream CA PEM bundle (replaces system roots)")
+		upstreamCert:=fs.String("upstream-client-cert","","Upstream TLS client certificate PEM")
+		upstreamKey:=fs.String("upstream-client-key","","Upstream TLS client key PEM")
+		allowHTTP:=fs.Bool("allow-loopback-http",false,"Allow plaintext upstream at literal loopback IP only")
+		listenCert:=fs.String("tls-cert","","Gateway listener certificate PEM")
+		listenKey:=fs.String("tls-key","","Gateway listener key PEM")
 		audience := fs.String("audience", "", "Required service identifier")
 		fs.Parse(os.Args[2:])
 
@@ -365,7 +371,9 @@ func main() {
 		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
 		replay,err:=revocation.Open(*replayDir)
 		if err!=nil { log.Fatalf("open replay store failed: %v",err) }
-		handler, err := proxy.NewHandlerForAudience(*target, trust, cfg, *audience, store, reg,replay)
+		listenerTLS,err:=proxy.ListenerTLS(*listen,*listenCert,*listenKey)
+		if err!=nil { log.Fatalf("listener TLS setup failed: %v",err) }
+		handler, err := proxy.NewHandlerForAudience(*target, trust, cfg, *audience, store, reg,replay,proxy.UpstreamTLSOptions{CAFile:*upstreamCA,ClientCertFile:*upstreamCert,ClientKeyFile:*upstreamKey,AllowLoopbackHTTP:*allowHTTP})
 		if err != nil {
 			log.Fatalf("proxy setup failed: %v", err)
 		}
@@ -373,6 +381,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Kgaga Gateway active on %s -> %s\n", *listen, *target)
 		server := &http.Server{
 			Addr:              *listen,
+			TLSConfig:         listenerTLS,
 			Handler:           handler,
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       30 * time.Second,
@@ -384,6 +393,7 @@ func main() {
 		if err!=nil { log.Fatalf("listen failed: %v",err) }
 		bounded,err:=proxy.LimitListener(listener,proxy.MaxOpenConnections)
 		if err!=nil { _=listener.Close(); log.Fatal(err) }
+		if listenerTLS!=nil { log.Fatal(server.ServeTLS(bounded,"","")) }
 		log.Fatal(server.Serve(bounded))
 
 	case "stdio-frame":
@@ -465,7 +475,7 @@ Usage:
   kgaga revoke --id <jti>                                    Revoke a passport
   kgaga verify --audience <service>                          Verify a passport from stdin and check revocation
   kgaga policy-check --config <file>                        Validate policy without starting gateway
-  kgaga proxy --listen 127.0.0.1:8080 --target <url> --audience <service>                 Start the security gateway
+  kgaga proxy --listen 127.0.0.1:8080 --target <https-url> --audience <service>          Start the security gateway (see proxy --help for TLS flags)
   kgaga stdio-frame --holder-key <pem> --passport-file <file>  Sign a JSON-RPC message from stdin
   kgaga wrap --audience <service> -- <command> [args...]       Authenticated lockstep stdio wrapper`)
 }

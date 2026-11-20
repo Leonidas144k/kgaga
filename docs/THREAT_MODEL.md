@@ -31,3 +31,7 @@ Protect issuer and holder keys, enrolled identities and permissions, credential 
 Harden route and method policy semantics and validate policy configuration; reject ambiguous protocol inputs and transformations; enforce safe authenticated transports and isolate upstream; establish resource bounds, durable state/backup and recovery; protect logs and secrets; complete independent security review. The production release must have explicit acceptance criteria and evidence for each. The identity preview does not close these blockers.
 
 No claims of protection against arbitrary prompt injection, malicious models, compromised hosts, hardware attacks or distributed replay are made.
+
+## Gateway transport update (increment 8)
+
+Upstream TLS verifies the configured hostname/IP and certificate chain; optional client certificates enable mTLS when the server requires and authorizes them. Cleartext upstream is restricted to explicit literal loopback. External listeners require TLS. PKI compromise, certificate revocation/rotation, direct backend access, network isolation and deployment assurance remain residual risks. Validation pending.
