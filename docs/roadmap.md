@@ -64,3 +64,7 @@ HTTP policy v2: explicit method allowlists, segment-boundary longest-prefix auth
 ### Gateway increment 2
 
 Strict bounded single-document YAML schema and semantic validation, programmatic policy snapshots, explicit empty MCP tool deny semantics, policy-check CLI and smoke coverage. Increment 1 validated locally and in CI at 7f66a2f. Increment 2 tests pending; parser hardening and transport security remain outstanding.
+
+### Gateway increment 3
+
+Strict bounded JSON-RPC HTTP inspector, full-tree duplicate key detection, exact envelope keys, explicit supported methods, request IDs, tool tuple validation, transport/header checks, fixed JSON errors, and block rather than rewrite detected MCP secrets. Signed gateway regression tests added. Increment 2 passed local and CI at 8cfcd71. Increment 3 validation pending. No complete MCP protocol conformance, session lifecycle, response validation or authenticated stdio guarantee.

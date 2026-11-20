@@ -94,6 +94,8 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			pr.Out.Header.Del("X-Agent-Passport")
 			pr.Out.Header.Del("X-Kgaga-Passport")
 			pr.Out.Header.Del(passport.ProofHeader)
+			// Optional Mcp-Name is redundant and is not part of v1 proof binding.
+			pr.Out.Header.Del("Mcp-Name")
 		},
 	}
 	serveJWKS := func(w http.ResponseWriter, r *http.Request) {
@@ -228,7 +230,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 					AgentID: claims.AgentID, Owner: claims.Owner, Method: r.Method,
 					Path: r.URL.Path, Decision: "BLOCK", Reason: err.Error(), Scopes: claims.Scopes,
 				})
-				http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32600,"message":"`+err.Error()+`"}}`, http.StatusBadRequest)
+				writeMCPError(w,http.StatusBadRequest,-32600,"invalid MCP request")
 				return
 			}
 
@@ -238,7 +240,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 					AgentID: claims.AgentID, Owner: claims.Owner, Method: mcpInfo.Method + ":" + mcpInfo.ToolName,
 					Path: r.URL.Path, Decision: "BLOCK", Reason: reason, Scopes: claims.Scopes,
 				})
-				http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32603,"message":"Kgaga MCP block: `+reason+`"}}`, http.StatusForbidden)
+				writeMCPError(w,http.StatusForbidden,-32603,"MCP request denied")
 				return
 			}
 		} else {
@@ -256,6 +258,11 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		redacted := false
 		if cfg.RedactSecrets && len(bodyBytes) > 0 {
 			cleaned, didRedact := policy.Redact(string(bodyBytes))
+			if isMCP && didRedact {
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"BLOCK",Reason:"MCP payload contains recognized secret pattern"})
+				writeMCPError(w,http.StatusForbidden,-32603,"MCP payload rejected by secret policy")
+				return
+			}
 			redacted = didRedact
 			bodyBytes = []byte(cleaned)
 		}
@@ -309,4 +316,11 @@ func validateRoute(r *http.Request) error {
 		}
 	}
 	return nil
+}
+
+// Reject messages without reflecting attacker-controlled fields or IDs.
+func writeMCPError(w http.ResponseWriter,status,code int,message string) {
+	w.Header().Set("Content-Type","application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc":"2.0","id":nil,"error":map[string]any{"code":code,"message":message}})
 }

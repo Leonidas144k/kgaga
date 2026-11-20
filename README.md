@@ -126,6 +126,12 @@ kgaga policy-check --config kgaga.yaml
 
 The policy checker and gateway require one YAML document of at most 128 KiB, with explicit `version`, `redact_secrets`, `mcp` and `rules` fields. Both MCP lists and every rule's `path_prefix`, `allowed_scopes`, `allowed_methods` and `deny_methods` fields are required. Unknown or duplicate fields, aliases, anchors, merge keys, explicit tags, scalar coercion, invalid paths, duplicate routes and invalid/duplicate list items are rejected. HTTP rule method/scope lists must be nonempty; use `rules: []` to deny all HTTP routes. An empty MCP tool allowlist denies all tool calls, including admin scope; an explicit sole "*" entry permits any tool not denied, subject to passport scopes. Denials take precedence within the winning rule. Other MCP method authorization remains unchanged. The gateway validates and snapshots its configuration at startup; policy changes require restart. Select a policy file with `proxy --config <file>`.
 
+### Restricted MCP HTTP preview
+
+Only POST /mcp without query parameters and application/json (optional UTF-8 charset) is inspected. A single JSON-RPC 2.0 request is required. Supported methods: initialize, ping, tools/list, tools/call and notifications/initialized. All other methods and batches are rejected. Requests require a nonempty string ID or safe-range integer ID; notifications/initialized must omit it. Params, when present, must be an object. Tool calls require a literal ASCII tool name and object arguments/_meta when present. Passport scope checks and the tool allowlist still apply.
+
+The parser rejects duplicate keys (including case-folded aliases as detected by Go strings.ToLower), unexpected envelope fields, invalid UTF-8, replacement characters, trailing JSON, depth over 32 and excessive token count. Body size remains 1 MiB. Optional compatibility method/name headers must match the body; redundant Mcp-Name is removed before forwarding. Duplicate headers, encoded bodies, trailers and unsupported connection options are rejected. With redact_secrets enabled, MCP requests matching existing secret patterns are blocked rather than rewritten after authorization. This is intentionally restrictive, not full MCP conformance or comprehensive DLP; method-specific schemas, negotiation/state, streaming, server responses and stdio security remain incomplete.
+
 ### Start an audience-bound gateway (isolated test environment only)
 
 ```bash

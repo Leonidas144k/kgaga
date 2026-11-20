@@ -5,7 +5,8 @@
 - HTTP policy version 2 requires explicit allowed methods; most-specific segment prefix wins, no broader fallback.
 - Reject ambiguous/nonliteral paths, common routing overrides, upstream base paths/queries and header-selected MCP routing.
 - Existing v1 policies require intentional migration.
-- Strict YAML schema and semantic validation; standalone policy-check; immutable gateway policy snapshot and explicit empty MCP tool deny behavior. Full MCP parser hardening remains pending.
+- Strict YAML schema and semantic validation; standalone policy-check; immutable gateway policy snapshot and explicit empty MCP tool deny behavior.
+- Restricted HTTP MCP parser: reject duplicate/ambiguous JSON, unsupported methods, malformed requests and detected secret patterns; add signed gateway tests. Full protocol/session/response validation remains pending.
 
 
 ## Unreleased — v0.3.0 identity preview

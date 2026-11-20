@@ -52,17 +52,18 @@ func TestGatewaySecurity(t *testing.T) {
 		{"denied method", "DELETE", "/api/db", valid, "", "", 403},
 		{"oversize", "POST", "/api/db", valid, strings.Repeat("x", maxRequestBytes+1), "", 413},
 		{"malformed MCP", "POST", "/mcp", valid, "{", "", 400},
-		{"MCP mismatch", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "tools/list", 400},
-		{"denied tool", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"drop_table\"}}", "", 403},
-		{"missing scope", "POST", "/mcp", mint([]string{"db:read"}, time.Minute), "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "", 403},
+		{"MCP mismatch", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "tools/list", 400},
+		{"denied tool", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"drop_table\"}}", "", 403},
+		{"missing scope", "POST", "/mcp", mint([]string{"db:read"}, time.Minute), "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "", 403},
 		{"valid HTTP", "GET", "/api/db", valid, "", "", 204},
-		{"valid MCP", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "", 204},
+		{"valid MCP", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "", 204},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			before := forwarded.Load()
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 			req.Header.Set("X-Agent-Passport", tc.token)
 			req.Header.Set("Mcp-Method", tc.mcpMethod)
+			if tc.path=="/mcp" { req.Header.Set("Content-Type","application/json") }
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, req)
 			if w.Code != tc.want { t.Fatalf("status %d, want %d: %s", w.Code, tc.want, w.Body.String()) }

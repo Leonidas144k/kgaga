@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"sync/atomic"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,13 +48,14 @@ func TestAudienceGateway(t *testing.T) {
 	var calls atomic.Int32
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
 		calls.Add(1)
+		if r.Header.Get("Mcp-Name")!="" { t.Error("redundant MCP tool header forwarded") }
 		if r.Header.Get("X-Agent-Passport") != "" || r.Header.Get("X-Kgaga-Passport") != "" || r.Header.Get(passport.ProofHeader)!="" { t.Error("credential leaked upstream") }
 		if r.Header.Get("X-Kgaga-Verified-Agent") != "agent" || r.Header.Get("X-Pangolin-Verified-Agent") != "agent" ||
 			r.Header.Get("X-Kgaga-Agent-Owner") != "owner" || r.Header.Get("X-Pangolin-Agent-Owner") != "owner" { t.Error("verified identity missing or spoofed") }
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer up.Close()
-	cfg := &policy.Config{Version:"2",Rules:[]policy.Rule{{PathPrefix:"/api/db",AllowedScopes:[]string{"db:read"},AllowedMethods:[]string{"GET"}}}}
+	cfg := &policy.Config{Version:"2",RedactSecrets:true,MCP:policy.MCPPolicy{AllowedTools:[]string{"search"},DeniedTools:[]string{"drop_table"}},Rules:[]policy.Rule{{PathPrefix:"/api/db",AllowedScopes:[]string{"db:read"},AllowedMethods:[]string{"GET"}}}}
 	storePath:=filepath.Join(dir,"revocations")
 	if err:=revocation.Init(storePath); err!=nil { t.Fatal(err) }
 	store,err:=revocation.Open(storePath)
@@ -62,7 +64,7 @@ func TestAudienceGateway(t *testing.T) {
 	if err:=registry.Init(regPath); err!=nil { t.Fatal(err) }
 	reg,err:=registry.Open(regPath)
 	if err!=nil { t.Fatal(err) }
-	if err:=reg.Register(registry.Agent{ID:"agent",Owner:"owner",Scopes:[]string{"db:read"},Audiences:[]string{"service-a"},HolderKey:encoded}); err!=nil { t.Fatal(err) }
+	if err:=reg.Register(registry.Agent{ID:"agent",Owner:"owner",Scopes:[]string{"db:read","mcp:tool:search"},Audiences:[]string{"service-a"},HolderKey:encoded}); err!=nil { t.Fatal(err) }
 	trustPath:=filepath.Join(dir,"trust")
 	if err:=keyring.Init(trustPath); err!=nil { t.Fatal(err) }
 	trust,err:=keyring.Open(trustPath)
@@ -99,6 +101,29 @@ func TestAudienceGateway(t *testing.T) {
 			h.ServeHTTP(w,r)
 			if w.Code != tc.want { t.Fatalf("status %d want %d",w.Code,tc.want) }
 		})
+	}
+	// Exercise the real holder-bound gateway, not just the legacy verifier.
+	mcpToken,err:=passport.MintBoundV2(priv,"agent","owner",[]string{"mcp:tool:search"},"service-a",time.Minute,holder)
+	if err!=nil { t.Fatal(err) }
+	for _,tc:=range []struct{body,name string; want int}{
+		{`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search"}}`,"search",204},
+		{`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","name":"drop_table"}}`,"",400},
+		{`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search"}}`,"other",400},
+		{`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"drop_table"}}`,"",403},
+		{`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","arguments":{"value":"sk-abcdefghijklmnopqrstuvwxyz"}}}`,"",403},
+	} {
+		r:=httptest.NewRequest("POST","/mcp",strings.NewReader(tc.body))
+		r.Header.Set("X-Agent-Passport",mcpToken)
+		r.Header.Set("Content-Type","application/json")
+		if tc.name!="" { r.Header.Set("Mcp-Name",tc.name) }
+		p,err:=passport.SignRequest(holderPriv,mcpToken,passport.RequestBinding{Method:"POST",Target:"/mcp",ContentType:"application/json",Body:[]byte(tc.body)},time.Now())
+		if err!=nil { t.Fatal(err) }
+		r.Header.Set(passport.ProofHeader,p)
+		before:=calls.Load()
+		w:=httptest.NewRecorder()
+		h.ServeHTTP(w,r)
+		if w.Code!=tc.want || (tc.want>=400 && calls.Load()!=before) { t.Fatalf("MCP status %d want %d",w.Code,tc.want) }
+		if tc.want>=400 && !json.Valid(w.Body.Bytes()) { t.Fatal("invalid MCP error response") }
 	}
 	// Possession of a valid passport and proof must not bypass route policy.
 	for _,tc:=range []struct{method,target,header,value string; want int}{
@@ -185,7 +210,7 @@ func TestAudienceGateway(t *testing.T) {
 	check(fresh,503)
 	if err:=os.Rename(storePath,storePath+"-backup"); err!=nil { t.Fatal(err) }
 	check(fresh,503)
-	if calls.Load()!=6 { t.Fatalf("upstream calls %d want 6",calls.Load()) }
+	if calls.Load()!=7 { t.Fatalf("upstream calls %d want 7",calls.Load()) }
 	w:=httptest.NewRecorder()
 	h.ServeHTTP(w,httptest.NewRequest("GET","/.well-known/jwks.json",nil))
 	var jwks passport.JWKS
