@@ -106,6 +106,8 @@ func RunStdioProxy(cmdPath string,cmdArgs []string,cfg *policy.Config,audience s
 		if cfg.RedactSecrets {
 			if err:=policy.InspectPayload(body,true,true); err!=nil { return errors.New("stdio request inspection rejected") }
 		}
+		if err:=checkLive(token,audience,trust,reg,rev); err!=nil { return errors.New("stdio final admission denied") }
+		if _,err:=passport.VerifyRequest(proof,token,holder,stdioBinding(body),time.Now()); err!=nil { return errors.New("stdio proof expired before dispatch") }
 		if cmd==nil {
 			// No execution before authentication and authorization.
 			next:=exec.CommandContext(ctx,cmdPath,cmdArgs...)
@@ -122,6 +124,8 @@ func RunStdioProxy(cmdPath string,cmdArgs []string,cfg *policy.Config,audience s
 			responses=bufio.NewScanner(childOut)
 			responses.Buffer(make([]byte,4096),mcp.MaxPayload+2)
 		}
+		if err:=checkLive(token,audience,trust,reg,rev); err!=nil { return errors.New("stdio final admission denied") }
+		if _,err:=passport.VerifyRequest(proof,token,holder,stdioBinding(body),time.Now()); err!=nil { return errors.New("stdio proof expired before dispatch") }
 		// Bound child I/O per admitted request. Closing the pipes also
 		// interrupts blocked I/O if a descendant retains a descriptor.
 		timer:=time.AfterFunc(stdioTimeout,func(){ cancel(); _=childIn.Close(); _=childOut.Close() })
@@ -143,7 +147,7 @@ func RunStdioProxy(cmdPath string,cmdArgs []string,cfg *policy.Config,audience s
 			if err:=delegation.Check(current,audience,trust,reg,rev); err!=nil { return errors.New("stdio delegation rejected before response") }
 			if _,err:=out.Write(append(response,'\n')); err!=nil { return err }
 		} else if !timer.Stop() || ctx.Err()!=nil { return errors.New("stdio child I/O deadline exceeded") }
-		emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:info.Method,Decision:"ALLOW"})
+		emitAudit(AuditEvent{AgentID:claims.AgentID,Owner:claims.Owner,PassportID:claims.ID,Method:info.Method,Scopes:claims.Scopes,Decision:"ALLOW"})
 	}
 	if err:=scanner.Err(); err!=nil { return errors.New("stdio input frame unavailable or oversized") }
 	if cmd==nil { return errors.New("no authorized stdio messages") }

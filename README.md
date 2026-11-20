@@ -175,6 +175,12 @@ kgaga proxy --listen 127.0.0.1:8443 --target https://backend.example:443 \
   --tls-cert /secure/gateway.pem --tls-key /secure/gateway.key
 ```
 
+### Adversarial regression coverage
+
+V2 passports now require the closed Kgaga-minted JSON schema: exact header and claim names, canonical base64url segments, string-list audience/scopes, integer time claims, and exact nested confirmation/delegation fields. Unknown or repeated fields, alternate spellings, trailing documents and noncanonical encodings are rejected even if correctly signed. The verifier still validates signatures and all semantic claims. Existing Kgaga-generated v2 passports remain in the supported format; externally constructed variants may require reissuance.
+
+The HTTP and stdio gateways recheck the live credential lifecycle and proof freshness immediately before dispatch, after potential I/O and replay-store delays. A consumed nonce is not refunded after rejection. Revocation and dispatch are not atomic; actions already dispatched cannot be undone. Regression tests cover simultaneous deliveries of one signed proof, revocation during body reading, withholding responses after revocation, and signed ambiguous credentials. CI repeats replay tests and runs a short parser fuzzing job. This is internal adversarial regression testing, not independent security certification or a penetration test.
+
 ### Start an audience-bound gateway (isolated test environment only)
 
 ```bash

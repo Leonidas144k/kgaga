@@ -92,3 +92,7 @@ CI passed at 186079b but local race tests reproduced premature 100 ms replay quo
 ### Gateway increment 8
 
 Verified TLS 1.2+ upstream connections by default, optional private trust roots and client certificates, literal-loopback-only explicit HTTP opt-in, non-loopback listener TLS requirement, and TLS/mTLS negative tests. Increment 7 replay fix passed CI and repeated local race tests at d059a2f. Increment 8 validation pending. Upstream must enforce client certificate authorization and network isolation; no automatic rotation or CRL/OCSP enforcement.
+
+### Gateway increment 9
+
+Closed v2 credential wire schema and canonical proof signature encoding; final live authorization/proof freshness rechecks before dispatch in both transports; concurrent replay, in-flight revocation and signed ambiguity regression tests; short envelope fuzzing and repeated replay tests in CI. Increment 8 passed local and CI at 5784d51. Increment 9 validation pending; external security assurance and operational release gates remain open.

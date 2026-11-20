@@ -187,6 +187,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			}
 		}
 
+		var binding passport.RequestBinding
 		if audience!="" {
 			// Reject ambiguous bound headers, content encodings and request-target
 			// normalization before validating the exact received body.
@@ -196,7 +197,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			if r.Header.Get("Content-Encoding")!="" || r.RequestURI!=r.URL.RequestURI() || len(r.Trailer)>0 {
 				http.Error(w,"unsupported request encoding or target",400); return
 			}
-			binding:=passport.RequestBinding{Method:r.Method,Target:r.URL.RequestURI(),ContentType:r.Header.Get("Content-Type"),MCPVersion:r.Header.Get("MCP-Protocol-Version"),MCPMethod:r.Header.Get("Mcp-Method"),MCPSession:r.Header.Get("Mcp-Session-Id"),Body:bodyBytes}
+			binding=passport.RequestBinding{Method:r.Method,Target:r.URL.RequestURI(),ContentType:r.Header.Get("Content-Type"),MCPVersion:r.Header.Get("MCP-Protocol-Version"),MCPMethod:r.Header.Get("Mcp-Method"),MCPSession:r.Header.Get("Mcp-Session-Id"),Body:bodyBytes}
 			nonce,err:=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now())
 			if err!=nil {
 				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"BLOCK",Reason:"request proof rejected"})
@@ -262,6 +263,15 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			if isMCP { writeMCPError(w,status,-32600,"MCP payload rejected by inspection") } else { http.Error(w,"request inspection rejected",status) }
 			return
 		}
+		if audience!="" {
+			e:=checkLive(rawToken,audience,trust,reg,store)
+			if e==nil { _,e=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now()) }
+			if e!=nil {
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"final admission check failed"})
+				if isMCP { writeMCPError(w,403,-32603,"final admission denied") } else { http.Error(w,"final admission denied",403) }
+				return
+			}
+		}
 		response,err:=exchange(r,target,transport,claims,bodyBytes,mcpInfo,cfg.RedactSecrets)
 		if err!=nil {
 			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"upstream response rejected or unavailable"})
@@ -271,11 +281,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		// Requests already dispatched cannot be undone. Do not release
 		// their response after credential lifecycle validation fails.
 		if audience!="" {
-			current,e:=trust.Verify(rawToken,audience)
-			if e==nil { e=store.Check(current.ID) }
-			if e==nil { _,e=reg.BoundHolder(current,audience) }
-			if e==nil { e=delegation.Check(current,audience,trust,reg,store) }
-			if e!=nil {
+			if e:=checkLive(rawToken,audience,trust,reg,store); e!=nil {
 				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"credential lifecycle check failed before response"})
 				if isMCP { writeMCPError(w,403,-32603,"response access denied") } else { http.Error(w,"response access denied",403) }
 				return

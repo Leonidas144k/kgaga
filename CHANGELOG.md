@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.4.0 gateway development
 
+- Adversarial regression coverage: reject ambiguous signed v2 envelopes, recheck live credentials and proof freshness before dispatch, repeat replay tests and fuzz the envelope parser in CI.
+
 - Require verified HTTPS upstream by default; private CA and client TLS credentials supported. Explicit literal-loopback HTTP opt-in; require TLS for non-loopback gateway binds.
 
 - Correct replay quota lock contention: bounded three-second acquisition, typed busy error and strengthened contention/duplicate tests; security ceilings and exclusive nonce writes unchanged.
