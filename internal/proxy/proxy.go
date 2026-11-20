@@ -326,7 +326,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			if e:=writeAudit("dispatch_intent",0); e!=nil { auditUnavailable(); return }
 			// Storage lookup is potentially slow. Repeat live checks after
 			// the lookup so a stale decision cannot authorize injection.
-			e:=checkLive(rawToken,audience,trust,reg,store)
+			e=checkLive(rawToken,audience,trust,reg,store)
 			if e==nil { _,e=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now()) }
 			if e==nil { e=broker.checkActive(selection) }
 			if e==nil { _,e=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now()) }
