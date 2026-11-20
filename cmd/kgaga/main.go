@@ -108,6 +108,30 @@ func main() {
 		if err:=registry.Init(*dir); err!=nil { log.Fatalf("initialize registry failed: %v",err) }
 		fmt.Println("Initialized agent registry")
 
+	case "agent-challenge":
+		fs:=flag.NewFlagSet("agent-challenge",flag.ExitOnError)
+		dir:=fs.String("registry",registry.DefaultDir,"Agent registry directory")
+		id:=fs.String("agent","","Proposed agent identifier")
+		fs.Parse(os.Args[2:])
+		reg,err:=registry.Open(*dir)
+		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
+		challenge,err:=reg.NewChallenge(*id)
+		if err!=nil { log.Fatalf("challenge failed: %v",err) }
+		fmt.Println(challenge)
+
+	case "agent-sign-enrolment":
+		fs:=flag.NewFlagSet("agent-sign-enrolment",flag.ExitOnError)
+		key:=fs.String("holder-key","","Agent private PEM path")
+		challenge:=fs.String("challenge","","Operator-issued challenge")
+		id:=fs.String("agent","","Proposed agent ID")
+		owner:=fs.String("owner","","Proposed owner")
+		scopes:=fs.String("scopes","","Proposed comma-separated scopes")
+		audiences:=fs.String("audiences","","Proposed comma-separated audiences")
+		fs.Parse(os.Args[2:])
+		proof,err:=passport.SignEnrollment(*key,*challenge,*id,*owner,strings.Split(*scopes,","),strings.Split(*audiences,","))
+		if err!=nil { log.Fatalf("sign enrolment failed: %v",err) }
+		fmt.Println(proof)
+
 	case "agent-register":
 		fs := flag.NewFlagSet("agent-register",flag.ExitOnError)
 		dir := fs.String("registry",registry.DefaultDir,"Agent registry directory")
@@ -116,6 +140,8 @@ func main() {
 		scopes := fs.String("scopes","","Comma-separated allowed scopes")
 		audiences := fs.String("audiences","","Comma-separated allowed audiences")
 		holderPub:=fs.String("holder-public","","Required agent public PEM path")
+		challenge:=fs.String("challenge","","Required operator-issued challenge")
+		proof:=fs.String("enrolment-proof","","Required agent enrolment signature")
 		fs.Parse(os.Args[2:])
 		reg,err:=registry.Open(*dir)
 		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
@@ -123,7 +149,7 @@ func main() {
 		if err!=nil { log.Fatalf("load holder public key failed: %v",err) }
 		encoded,err:=registry.EncodeHolder(holder)
 		if err!=nil { log.Fatalf("encode holder failed: %v",err) }
-		if err:=reg.Register(registry.Agent{ID:*id,Owner:*owner,Scopes:strings.Split(*scopes,","),Audiences:strings.Split(*audiences,","),HolderKey:encoded}); err!=nil { log.Fatalf("register agent failed: %v",err) }
+		if err:=reg.RegisterAttested(registry.Agent{ID:*id,Owner:*owner,Scopes:strings.Split(*scopes,","),Audiences:strings.Split(*audiences,","),HolderKey:encoded},*challenge,*proof); err!=nil { log.Fatalf("register agent failed: %v",err) }
 		fmt.Println("Agent registered:",*id)
 
 	case "agent-inspect":
@@ -346,7 +372,9 @@ Usage:
   kgaga keys-list                                           List non-retired keys as JWKS
   kgaga key-retire --kid <id>                                Permanently retire a signing key
   kgaga agents-init                                         Initialize the agent registry once
-  kgaga agent-register --agent <id> --owner <id> --scopes <s1,s2> --audiences <a1,a2> --holder-public <pem>
+  kgaga agent-challenge --agent <id>                        Create 5-minute enrolment challenge
+  kgaga agent-sign-enrolment --holder-key <pem> --challenge <id> --agent <id> --owner <id> --scopes <s1,s2> --audiences <a1,a2>
+  kgaga agent-register --agent <id> --owner <id> --scopes <s1,s2> --audiences <a1,a2> --holder-public <pem> --challenge <id> --enrolment-proof <signature>
   kgaga agent-inspect --agent <id>                            Inspect a registered agent
   kgaga agent-suspend --agent <id>                            Permanently suspend an agent ID
   kgaga replay-init                                         Initialize the dedicated replay store

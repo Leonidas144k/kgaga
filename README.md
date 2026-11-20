@@ -82,7 +82,11 @@ Run `kgaga init`, `kgaga revocations-init`, `kgaga agents-init`, `kgaga keys-ini
 
 ```bash
 kgaga key-generate --out /secure/agent-holder
-kgaga agent-register --agent support-bot --owner ops@company.com --scopes mcp:tool:search,db:read --audiences support-api --holder-public /secure/agent-holder/kgaga.pub
+CHALLENGE=$(kgaga agent-challenge --agent support-bot)
+# Run the following signing command on the agent host with its private key.
+ENROLMENT=$(kgaga agent-sign-enrolment --holder-key /secure/agent-holder/kgaga.key --challenge "$CHALLENGE" --agent support-bot --owner ops@company.com --scopes mcp:tool:search,db:read --audiences support-api)
+# Return only the public key and enrolment signature to the trusted operator.
+kgaga agent-register --agent support-bot --owner ops@company.com --scopes mcp:tool:search,db:read --audiences support-api --holder-public /secure/agent-holder/kgaga.pub --challenge "$CHALLENGE" --enrolment-proof "$ENROLMENT"
 ```
 
 Generate a short-lived signed token bound to an explicit service audience, an agent, an owner, and permission scopes. Protect the signing key and state; a key holder can sign claims outside the CLI, so registry checks at verification are mandatory.
@@ -163,6 +167,12 @@ PROOF=$(printf '%s' "$TOKEN" | kgaga proof --holder-key /secure/agent-holder/kga
 ```
 
 Use TLS; avoid exposing secrets in command arguments, logs or URLs. `--body-file`, `--content-type`, `--mcp-version`, `--mcp-method`, and `--mcp-session` bind the relevant inbound values. Encoded bodies and ambiguous headers are rejected. Proofs are `v1.timestamp.nonce.signature`: decimal Unix seconds, 16 random bytes in lowercase hex, and base64url Ed25519 signature without padding. The signed message is Go `encoding/json.Marshal` of the string array `["kgaga-request-proof-v1", timestamp, nonce, base64url(SHA256(passport)), method, origin-form target, content-type, mcp-version, mcp-method, mcp-session, base64url(SHA256(body))]`. This is a Kgaga development protocol, not RFC 9449 DPoP or HTTP Message Signatures. The gateway permits 30 seconds of age and 5 seconds of future clock skew, records each valid proof nonce exclusively in the local replay directory before policy evaluation, and strips the proof before forwarding. A replay is rejected even after a normal restart; markers are retained indefinitely. Use the same protected `--replay` store for all gateways sharing a trust boundary on this host. Distributed replay prevention, pruning, power-loss durability, full HTTP header integrity, transport security, and independent review remain outstanding. A captured complete fresh request could still race the legitimate request. Do not use in production.
+
+### Challenge-based enrolment
+
+The trusted operator creates a random 256-bit challenge tied to the exact proposed agent ID. It expires after five minutes and is consumed once with an exclusive filesystem marker. The agent signs a domain-separated statement containing the challenge, agent ID, owner, exact scope and audience lists, and holder public-key thumbprint. The signed encoding is Go `encoding/json.Marshal` of the array `["kgaga-enrolment-v1", challenge, agent, owner, scopes, audiences, holder_jkt]`, where scopes/audiences are ordered arrays of strings. The signature is unpadded base64url Ed25519. The operator must independently approve the owner, key and permissions and authenticate the exchange; proof of key possession is not independent identity, hardware, software, model, or workload attestation.
+
+Use the same protected registry directory for challenge issuance and registration. Missing, expired, mismatched or consumed challenges are rejected. A consumed challenge is never retried if registration fails; use a new one. Records and markers survive ordinary process restarts and are retained indefinitely in this development increment. The holder private key never needs to leave the agent host. Existing holder-bound registrations remain valid and are not retroactively attested; to require this enrolment for all identities, suspend old IDs and register new ones. There is no public enrollment service or distributed challenge ledger. Operator filesystem access remains the trust boundary.
 
 ## Migration from Pangolin v0.1
 

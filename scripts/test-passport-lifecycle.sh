@@ -35,7 +35,12 @@ expect_failure "open agent registry failed" "$kgaga" mint --agent smoke-agent --
 "$kgaga" agents-init
 expect_failure "mint rejected: agent authorization denied" "$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:read --audience support-api
 "$kgaga" key-generate --out holder
-"$kgaga" agent-register --agent smoke-agent --owner ops@example.com --scopes db:read --audiences support-api --holder-public holder/kgaga.pub
+challenge=$("$kgaga" agent-challenge --agent smoke-agent)
+enrolment=$("$kgaga" agent-sign-enrolment --holder-key holder/kgaga.key --challenge "$challenge" --agent smoke-agent --owner ops@example.com --scopes db:read --audiences support-api)
+registration=(agent-register --agent smoke-agent --owner ops@example.com --scopes db:read --audiences support-api --holder-public holder/kgaga.pub --challenge "$challenge")
+expect_failure "invalid enrolment signature" "$kgaga" "${registration[@]}" --enrolment-proof ""
+"$kgaga" "${registration[@]}" --enrolment-proof "$enrolment"
+expect_failure "enrolment challenge already consumed" "$kgaga" "${registration[@]}" --enrolment-proof "$enrolment"
 "$kgaga" agent-inspect --agent smoke-agent | python3 -c 'import json,sys; a=json.load(sys.stdin); assert a["agent_id"]=="smoke-agent" and not a["suspended"]'
 expect_failure "mint rejected: agent authorization denied" "$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:write --audience support-api
 "$kgaga" keys-init
@@ -70,4 +75,4 @@ fresh="$rotated"
 "$kgaga" agent-suspend --agent smoke-agent
 expect_failure "passport rejected: agent authorization denied: suspended agent" "$kgaga" verify --audience support-api <<< "$fresh"
 expect_failure "mint rejected: agent authorization denied: suspended agent" "$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:read --audience support-api
-echo "PASS: registration, scope limits, issuance, audience binding, revocation, key rotation, holder binding, proof generation and agent suspension"
+echo "PASS: attested enrolment, scope limits, issuance, audience binding, revocation, key rotation, holder binding, proof generation and agent suspension"

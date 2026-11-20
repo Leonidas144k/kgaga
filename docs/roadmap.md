@@ -43,4 +43,8 @@ Explicit trusted signing keyring, generation into a new directory, public-key tr
 
 ### Identity increment 5
 
-Holder confirmation in passports, immutable registered agent public key, strict HTTP request proof verification, and atomic local replay marker consumption. Credential inspection is not live proof. Legacy unbound passports are denied by CLI/gateway. Custom development protocol, no standards compliance claim. Distributed replay state, full request integrity, durable pruning and independent review outstanding. Pending validation.
+Holder confirmation in passports, immutable registered agent public key, strict HTTP request proof verification, and atomic local replay marker consumption. Credential inspection is not live proof. Legacy unbound passports are denied by CLI/gateway. Custom development protocol, no standards compliance claim. Distributed replay state, full request integrity, durable pruning and independent review outstanding. Increment 5 local and GitHub CI passed at de23553.
+
+### Identity increment 6
+
+Operator-issued single-use enrolment challenges, holder signatures over full proposed registration, expiry, replay rejection, concurrency tests and CLI lifecycle coverage. This is possession at enrolment, not independent workload or hardware attestation. Existing holder-bound identities remain compatible. Delegation and external attestation pending; validation pending.
