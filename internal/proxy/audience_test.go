@@ -53,7 +53,7 @@ func TestAudienceGateway(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer up.Close()
-	cfg := &policy.Config{Rules:[]policy.Rule{{PathPrefix:"/api/db",AllowedScopes:[]string{"db:read"},AllowedMethods:[]string{"GET"}}}}
+	cfg := &policy.Config{Version:"2",Rules:[]policy.Rule{{PathPrefix:"/api/db",AllowedScopes:[]string{"db:read"},AllowedMethods:[]string{"GET"}}}}
 	storePath:=filepath.Join(dir,"revocations")
 	if err:=revocation.Init(storePath); err!=nil { t.Fatal(err) }
 	store,err:=revocation.Open(storePath)

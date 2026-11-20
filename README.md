@@ -118,6 +118,14 @@ Existing policy files with version "1" will no longer load. Back up the policy o
 
 Routes are restricted to literal ASCII unreserved path segments, without percent escapes, duplicate slashes, trailing slash aliases, dot segments or matrix parameters. Upstream targets must be origin URLs without a base path or query. MCP is selected by the exact /mcp route and POST only; nonempty MCP headers elsewhere and common alternate routing/method override headers are rejected. Use a case-sensitive upstream with matching path semantics; this is not full HTTP/MCP integrity or policy schema validation. Query/body-based method overrides and other upstream-specific routing conventions must be disabled by the operator.
 
+### Validate policy configuration
+
+```bash
+kgaga policy-check --config kgaga.yaml
+```
+
+The policy checker and gateway require one YAML document of at most 128 KiB, with explicit `version`, `redact_secrets`, `mcp` and `rules` fields. Both MCP lists and every rule's `path_prefix`, `allowed_scopes`, `allowed_methods` and `deny_methods` fields are required. Unknown or duplicate fields, aliases, anchors, merge keys, explicit tags, scalar coercion, invalid paths, duplicate routes and invalid/duplicate list items are rejected. HTTP rule method/scope lists must be nonempty; use `rules: []` to deny all HTTP routes. An empty MCP tool allowlist denies all tool calls, including admin scope; an explicit sole "*" entry permits any tool not denied, subject to passport scopes. Denials take precedence within the winning rule. Other MCP method authorization remains unchanged. The gateway validates and snapshots its configuration at startup; policy changes require restart. Select a policy file with `proxy --config <file>`.
+
 ### Start an audience-bound gateway (isolated test environment only)
 
 ```bash

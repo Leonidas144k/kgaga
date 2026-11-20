@@ -38,6 +38,7 @@ func TestGatewaySecurity(t *testing.T) {
 	}))
 	defer up.Close()
 	cfg := &policy.Config{
+		Version: "2",
 		MCP: policy.MCPPolicy{AllowedTools: []string{"search"}, DeniedTools: []string{"drop_table"}},
 		Rules: []policy.Rule{{PathPrefix: "/api/db", AllowedScopes: []string{"db:read"}, AllowedMethods: []string{"GET","HEAD"}, DenyMethods: []string{"DELETE"}}},
 	}
@@ -81,8 +82,8 @@ func TestInvalidGatewayConfiguration(t *testing.T) {
 	key, _, err := ed25519.GenerateKey(nil)
 	if err != nil { t.Fatal(err) }
 	for _, target := range []string{"relative", "ftp://example.com", "http://user:pass@example.com", "http://"} {
-		if _, err := NewHandler(target, key, &policy.Config{}); err == nil { t.Fatalf("accepted %q", target) }
+		if _, err := NewHandler(target, key, &policy.Config{Version:"2"}); err == nil { t.Fatalf("accepted %q", target) }
 	}
-	if _, err := NewHandler("http://localhost", nil, &policy.Config{}); err == nil { t.Fatal("accepted invalid key") }
+	if _, err := NewHandler("http://localhost", nil, &policy.Config{Version:"2"}); err == nil { t.Fatal("accepted invalid key") }
 	if _, err := NewHandler("http://localhost", key, nil); err == nil { t.Fatal("accepted nil policy") }
 }

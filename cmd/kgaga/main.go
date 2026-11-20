@@ -328,8 +328,18 @@ func main() {
 		if err!=nil { log.Fatalf("proof failed: %v",err) }
 		fmt.Println(p)
 
+	case "policy-check":
+		fs:=flag.NewFlagSet("policy-check",flag.ExitOnError)
+		path:=fs.String("config","kgaga.yaml","Policy file to validate")
+		fs.Parse(os.Args[2:])
+		if fs.NArg()!=0 { log.Fatal("policy-check takes no positional arguments") }
+		cfg,err:=policy.Load(*path)
+		if err!=nil { log.Fatalf("invalid policy: %v",err) }
+		fmt.Printf("PASS: policy version %s, %d HTTP rules, %d allowed MCP tools\n",cfg.Version,len(cfg.Rules),len(cfg.MCP.AllowedTools))
+
 	case "proxy":
 		fs := flag.NewFlagSet("proxy", flag.ExitOnError)
+		configPath:=fs.String("config","kgaga.yaml","Policy file to validate and load")
 		replayDir:=fs.String("replay",passport.ReplayDir,"Dedicated replay store")
 		trustDir:=fs.String("trust",keyring.DefaultDir,"Public trust directory")
 		registryDir := fs.String("registry",registry.DefaultDir,"Agent registry directory")
@@ -341,7 +351,7 @@ func main() {
 
 		trust,err:=keyring.Open(*trustDir)
 		if err!=nil { log.Fatalf("open trust store failed: %v",err) }
-		cfg, err := policy.Load("kgaga.yaml")
+		cfg, err := policy.Load(*configPath)
 		if err != nil {
 			log.Fatalf("load policy failed: %v", err)
 		}
@@ -435,6 +445,7 @@ Usage:
   kgaga revocations-init                                    Initialize the local revocation store once
   kgaga revoke --id <jti>                                    Revoke a passport
   kgaga verify --audience <service>                          Verify a passport from stdin and check revocation
+  kgaga policy-check --config <file>                        Validate policy without starting gateway
   kgaga proxy --listen 127.0.0.1:8080 --target <url> --audience <service>                 Start the security gateway
   kgaga wrap -- <command> [args...]                         Wrap a local stdio MCP server`)
 }

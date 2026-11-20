@@ -70,9 +70,8 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		return nil, errors.New("upstream must be an HTTP(S) URL with a host and no userinfo or fragment")
 	}
 	if (target.Path!="" && target.Path!="/") || target.RawPath!="" || target.RawQuery!="" || target.ForceQuery || target.Opaque!="" { return nil,errors.New("upstream must be an origin URL without a base path or query") }
-	if cfg == nil {
-		return nil, errors.New("policy configuration is required")
-	}
+	cfg,err=cfg.Snapshot()
+	if err!=nil { return nil,err }
 	// Copy the supplied key so later caller mutations cannot desynchronise JWKS.
 	pubKey = append(ed25519.PublicKey(nil), pubKey...)
 	var jwks *passport.JWKS

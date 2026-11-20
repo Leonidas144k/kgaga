@@ -1,13 +1,10 @@
 package policy
 
 import (
-	"os"
-	"fmt"
 	"regexp"
 	"slices"
 	"strings"
 
-	"gopkg.in/yaml.v3"
 )
 
 type Rule struct {
@@ -46,19 +43,6 @@ rules:
     allowed_methods: ["POST"]
     deny_methods: []
 `
-
-func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
-	}
-	if cfg.Version != "2" { return nil, fmt.Errorf("policy version %q unsupported: migrate to version 2 with explicit allowed_methods",cfg.Version) }
-	return &cfg, nil
-}
 
 // CanonicalPath accepts only literal ASCII unreserved path segments.
 // No encoded paths, dot segments, matrix parameters, duplicate slashes or
@@ -116,7 +100,7 @@ func (c *Config) AuthorizeMCP(method, toolName, requiredScope string, agentScope
 		return false, "MCP tool explicitly denied by kgaga.yaml: " + toolName
 	}
 
-	if toolName != "" && len(c.MCP.AllowedTools) > 0 {
+	if toolName != "" {
 		if !slices.Contains(c.MCP.AllowedTools, toolName) && !slices.Contains(c.MCP.AllowedTools, "*") {
 			return false, "MCP tool not in kgaga.yaml allowlist: " + toolName
 		}

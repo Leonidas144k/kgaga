@@ -60,3 +60,7 @@ See [release checklist](RELEASE_CHECKLIST.md), [threat model](THREAT_MODEL.md) a
 ### Gateway increment 1
 
 HTTP policy v2: explicit method allowlists, segment-boundary longest-prefix authorization, no broader fallback, ambiguous winning rules deny, literal canonical paths, root-only upstream origin, exact POST /mcp classification, common routing override rejection and regression tests. Version 1 policy files must be migrated intentionally. Full YAML validation, strict MCP parsing, complete forwarding integrity and independent security review remain pending. Validation pending.
+
+### Gateway increment 2
+
+Strict bounded single-document YAML schema and semantic validation, programmatic policy snapshots, explicit empty MCP tool deny semantics, policy-check CLI and smoke coverage. Increment 1 validated locally and in CI at 7f66a2f. Increment 2 tests pending; parser hardening and transport security remain outstanding.
