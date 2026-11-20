@@ -47,3 +47,5 @@ A hardened HTTP/MCP boundary precedes vault, audit ledger and enterprise control
 ## Vault development foundation
 
 Gateway merged at 2fcecf6; post-merge CI passed. The separate internal/vault cryptographic foundation is under development on the Vault branch; see [Vault architecture](VAULT_ARCHITECTURE.md). It does not yet change the request lifecycle or provide secret storage or injection.
+
+Vault increment 002 adds the isolated operator-only immutable encrypted record store. Caller-owned keys remain outside storage; no agent or gateway integration. See VAULT_ARCHITECTURE.md for trust and recovery constraints.

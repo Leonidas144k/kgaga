@@ -108,3 +108,7 @@ Gateway merged via PR #3 at 2fcecf6. Both post-merge CI runs (44713495741, 44713
 ### Vault increment 1
 
 Separate internal/vault package and documented architecture. AES-256-GCM record primitive, random data keys/identifiers/nonces, bounded KGV1 format, domain-separated authenticated record context and negative tests. No persistent storage, key wrapping, access policy or gateway integration yet. Validation pending. See [Vault architecture](VAULT_ARCHITECTURE.md).
+
+### Vault increment 2
+
+Increment 1 passed ten local race-test repetitions, full lifecycle and CI at 15b5236 (44714133145). Increment 2 adds explicit initialized vault identity, bounded private local encrypted record storage, exclusive immutable version publication, normal restart retrieval with caller-owned key and expected context, and tampering, substitution, permissions and concurrent writer tests. Validation pending. No live secrets; no key custody, automatic recovery, aggregate capacity bounds or gateway access.

@@ -1,6 +1,6 @@
 # Kgaga Vault — cryptographic architecture
 
-Status: increment 001 development foundation; no persistent vault, secret-facing CLI or gateway injection is implemented yet.
+Status: increment 002 development foundation. Local immutable encrypted record storage; no key custody, secret-facing CLI or gateway injection yet.
 
 ## Goal and separation of duties
 
@@ -17,7 +17,9 @@ Identity authenticates an agent; Gateway authorizes its actions; Vault will hold
 
 ## Planned storage and key hierarchy
 
-Storage (increment 002): design immutable encrypted records and bounded parsing, explicit initialization, restricted directory/file permissions, exclusive atomic publication, restart tests, fail-closed error behavior and backup constraints. No plaintext at rest. Until key custody is implemented, exercise only synthetic data with ephemeral caller-owned data keys.
+Storage (increment 002): operator-only local Store API, explicit Init(path, vaultID) and Open(path, expectedVaultID), no implicit initialization, private 0700 directory and 0600 regular files. The manifest contains KGS1 and the 16-byte vault ID. Supply the expected identity and data key/key ID independently from trusted caller state. The manifest is not itself a cryptographic trust anchor. Each record path is a validated name, dot, fixed-width 20-digit version, and .kgv suffix; the file contains only the authenticated KGV1 envelope. No plaintext or raw DEK is written. Put encrypts in memory, writes a private temporary file, syncs it, then exclusively publishes with a hard link. Concurrent writers cannot replace the winning version. Get bounds reads and checks file type, permissions, path identity and the expected authenticated record context. An open store pins directory and manifest identity. Normal reopen with the same expected identity and key works; missing, replaced or corrupted state fails closed within the documented trust assumptions.
+
+Only use supported POSIX local filesystems with hard links and protected hierarchy/ownership/ACLs; do not use shared or untrusted writable parents. The file checks are not race-proof against a malicious filesystem writer. File sync precedes publication but directory persistence, power-loss transactions and rollback protection are not established. Failure after publication can be ambiguous; never overwrite an existing version. A crash can leave encrypted .pending files or partial initialization; no automatic cleanup/recovery. Back up encrypted records and independent trusted metadata/key material together using a controlled offline process. No aggregate storage capacity limit or retention policy yet. Use only synthetic data until key custody and access policies are implemented.
 
 Key hierarchy (increment 003): separate operator-controlled key encryption key (KEK), independent DEKs, separately domain-bound authenticated DEK wrapping, explicit key IDs and key rotation policy. Store wrapped DEKs beside ciphertext, never the plaintext KEK or DEK. No automated deletion or rotation before crash and recovery behavior is specified. External KMS integration remains a later increment.
 
@@ -27,4 +29,4 @@ Later: short-lived credentials, versioning, external secret managers, audit, adv
 
 ## Threat model and operational limits
 
-Trust the operator, operating system and cryptographic randomness. A stolen ciphertext alone should not reveal secret plaintext without its data key. A stolen key can decrypt the matching record. Metadata is authenticated, not necessarily confidential. Ciphertext length reveals approximate secret length. Rollback protection, durable transaction recovery, key custody, cross-process storage concurrency, memory/runtime exposure, permissions enforcement, policy authorization and credential injection are future work. The foundation is not an operational secret manager and must not hold live credentials. Do not publish a production assurance claim based on primitive-level tests.
+Trust the operator, operating system and cryptographic randomness. A stolen ciphertext alone should not reveal secret plaintext without its data key. A stolen key can decrypt the matching record. Metadata is authenticated, not necessarily confidential. Ciphertext length reveals approximate secret length. Rollback protection, durable transaction recovery, key custody, storage capacity management, memory/runtime exposure, policy authorization and credential injection are future work. Exclusive publication and mode checks are implemented under protected-filesystem assumptions, not a sandbox. The foundation is not an operational secret manager and must not hold live credentials. Do not publish a production assurance claim based on primitive-level tests.

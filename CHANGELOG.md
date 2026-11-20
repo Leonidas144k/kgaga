@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.5.0 vault development
 
+- Add private local immutable encrypted record storage with explicit identity, bounded reads, exclusive publication and restart/concurrency regression tests. Caller-managed data keys only.
+
 - Add isolated AES-256-GCM record primitives with authenticated record metadata, bounded versioned ciphertext format, cryptographic key/nonce generation and tamper tests. No storage or agent/gateway secret API yet.
 
 ## Unreleased — v0.4.0 gateway development

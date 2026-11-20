@@ -1,5 +1,5 @@
 // Package vault contains development-preview cryptographic primitives.
-// It does not yet provide persistent storage or an agent-facing secret API.
+// Local encrypted record storage is operator-only; no agent-facing secret API.
 package vault
 
 import (
