@@ -9,3 +9,11 @@ dist/
 pangolin.key
 kgaga.pub
 /build/
+
+/kgaga-revocations/
+
+/kgaga-agents/
+
+/kgaga-trust/
+
+/kgaga-replay/

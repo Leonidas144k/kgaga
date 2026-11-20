@@ -9,7 +9,7 @@ Kgaga is AFROSOFT's agent identity and security project. Preserve the Go core an
 - [ ] Build, vet, race-test and review migration from v0.1; do not publish until green.
 - [x] Implement initial HTTP request limit (1 MiB), read errors, header/read/idle timeouts, matching JWKS key and upstream URL checks; verify in CI.
 - [x] Add regression tests for malformed MCP calls, mismatched headers, denied scopes, invalid/expired signatures and default deny; execution pending CI.
-- [ ] Threat model: malicious agents, untrusted MCP servers, token theft and replay, policy bypass, leaked secrets, compromised key storage and operator error. Treat stdio as experimental until authenticated and fail-closed.
+- [x] Initial threat model documented; mitigations and independent review remain open. Treat stdio as experimental until authenticated and fail-closed.
 
 ## v0.3.0 — identity
 
@@ -24,3 +24,35 @@ MCP transport compliance, strict policy matching, authenticated stdio, response 
 Managed control plane, SDKs, enterprise pilots, independent security assessment, commercial launch. No production-ready claim before release gates are met.
 
 The CLI binds to loopback by default. Explicit non-loopback deployment needs TLS and network access controls. Full streaming, response limits, replay resistance, revocation and authenticated stdio remain open.
+
+### Identity increment 1
+
+Implemented strict v2 issuance and verification, key thumbprints, unique credential IDs, mandatory time claims, maximum TTL, exact single audience, CLI verification and audience-bound HTTP gateway. Legacy tokens require reissuance; no CLI fallback. Increment 1 CI and local tests passed. Key rotation, agent registry and proof of possession remain outstanding.
+
+### Identity increment 2
+
+Local persistent passport revocation: explicit store initialization, exclusive per-ID markers, CLI revoke, check on CLI verify and audience-bound gateway, fail closed on store errors, and regression tests. No database or new dependencies. Distributed state, pruning, backups, power-loss durability, trusted operator access and replay resistance require further design. Increment 2 CI and local smoke test passed at 81f16e3.
+
+### Identity increment 3
+
+Local immutable agent registry, registration, inspection, permanent suspension, mandatory registry authorization at CLI mint/verify and v2 gateway, and tests. Operator filesystem permissions remain the trust boundary; no resume, record editing, distributed state or independent attestation. Increment 3 GitHub CI passed at 4e8f0bb; local CLI confirmed.
+
+### Identity increment 4
+
+Explicit trusted signing keyring, generation into a new directory, public-key trust, manual issuer selection and permanent retirement, live JWKS, mandatory keyring checks and regression tests. Single-host operator-controlled storage; no automatic rotation, distributed trust synchronization or HSM support. Increment 4 CI and local smoke passed at 4fa2abf.
+
+### Identity increment 5
+
+Holder confirmation in passports, immutable registered agent public key, strict HTTP request proof verification, and atomic local replay marker consumption. Credential inspection is not live proof. Legacy unbound passports are denied by CLI/gateway. Custom development protocol, no standards compliance claim. Distributed replay state, full request integrity, durable pruning and independent review outstanding. Increment 5 local and GitHub CI passed at de23553.
+
+### Identity increment 6
+
+Operator-issued single-use enrolment challenges, holder signatures over full proposed registration, expiry, replay rejection, concurrency tests and CLI lifecycle coverage. This is possession at enrolment, not independent workload or hardware attestation. Existing holder-bound identities remain compatible. Enrollment CI and local lifecycle passed at 662eafd; independent workload attestation remains pending.
+
+### Identity increment 7
+
+One-hop issuer-mediated delegation with explicit parent scope, signed parent grant, exact child holder binding, same owner/audience, permission subset, bounded expiry and parent lifecycle checks. Separate JWT type prevents old verifiers accepting the new format. Reusable grants are not independently revocable; parent revocation disables descendants. No nested delegation. Local lifecycle, race tests, vet, build and both GitHub CI runs passed at 662eafd. Independent workload attestation remains unimplemented.
+
+## Release review
+
+See [release checklist](RELEASE_CHECKLIST.md), [threat model](THREAT_MODEL.md) and [architecture](ARCHITECTURE.md). Do not confuse completion of initial identity implementation with readiness to operate a security boundary. Prioritize safe request forwarding and policy semantics before an external pilot.
