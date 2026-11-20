@@ -53,6 +53,7 @@ func NewID()(string,error) {
 type Recorder struct {
 	mu sync.Mutex
 	out io.Writer
+	failed bool // protected by mu; no automatic reset after an ambiguous write
 }
 
 func NewRecorder(w io.Writer)*Recorder { return &Recorder{out:w} }
@@ -72,7 +73,13 @@ func (r *Recorder) Record(e Event) error {
 	raw=append(raw,'\n')
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.failed { return ErrUnavailable }
 	n,err:=r.out.Write(raw)
-	if err!=nil || n!=len(raw) { return ErrUnavailable }
+	if err!=nil || n!=len(raw) {
+		// A partial JSON line can corrupt subsequent framing. Do not
+		// resume credential operations until the operator repairs the sink.
+		r.failed=true
+		return ErrUnavailable
+	}
 	return nil
 }

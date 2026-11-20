@@ -1,6 +1,6 @@
 # Kgaga Vault — cryptographic architecture
 
-Status: increment 004 development foundation. Local immutable encrypted records, external-file KEK custody, envelope encryption and a separate Vault access policy evaluator. Explicit opt-in HTTPS gateway enforcement, bearer injection and timed credential leases are implemented through increment 009.
+Status: increment 004 development foundation. Local immutable encrypted records, external-file KEK custody, envelope encryption and a separate Vault access policy evaluator. Explicit opt-in HTTPS gateway enforcement, bearer injection and timed credential leases are implemented through increment 010.
 
 ## Goal and separation of duties
 
@@ -75,7 +75,9 @@ Usage audit (increment 009): the structured kgaga.vault.audit.v1 JSON-lines stre
 
 The sink checks write errors and short writes, serializes events per process and bounds each event to 8192 bytes. Failure to record intent blocks credential dispatch or administrative mutation. Failure recording release intent withholds the response; it cannot reverse effects already executed. Final live checks run after potentially slow intent writes; a subsequent denial may follow an intent. A dispatch intent is not proof of receipt, and release intent records the inspected HTTP status, not delivery or business/MCP success. A missing terminal event is ambiguous (crash, sink failure or interruption). Ordinary gateway/stdio behavior is unchanged. Successful write means writer acceptance only: no fsync, persistent collector, tamper-evident chain, authenticated operator identity, delivery acknowledgement, log retention, cross-process ordering guarantee or rollback protection. Blocking stderr can delay requests; deploy only with a continuously drained protected sink. No guarantee against an operator placing secrets in metadata, hostile logging infrastructure, OS compromise or indirect disclosure. These limitations remain Ledger/release-review work. Only synthetic credentials.
 
-Later: provider-native dynamic issuance and additional providers, tamper-evident Ledger, adversarial testing and release review.
+Adversarial review (increment 010): any sink write error or short write latches the per-process structured audit recorder unavailable. It does not automatically resume on a potentially corrupted stream, even if later writes would succeed. Stop the gateway, repair/rotate the protected audit destination and deliberately restart; CLI invocations are independent processes and must not be retried after ambiguous publication without inspecting state. Audit inputs rejected before a write do not latch the recorder. The structured release intent replaces the redundant legacy ALLOW log for Vault-mode successes, avoiding a potentially blocking unchecked log write after the last live checks. Ordinary gateway/stdio audit is unchanged. Regression tests simulate passport revocation during dispatch-intent recording and credential revocation during release-intent recording, and test that a failed recorder never resumes. CI repeats audit and brokerage regressions and fuzzes KGV1/KGE1/KGL1/KGC1 and KV v2 response parsers. These tests are scoped internal regression work, not independent certification.
+
+Later: provider-native dynamic issuance and additional providers, bounded persistent storage and enforced KEK wrap budget, production key custody, tamper-evident Ledger, and independent security assessment.
 
 ## Threat model and operational limits
 

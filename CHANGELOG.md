@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.5.0 vault development
 
+- Latch audit sink write failures, regression-test revocation during dispatch/release intent, fuzz Vault formats in CI, and document development-preview release gates.
+
 - Add structured correlated Vault usage and operator audit events with checked intent writes and fail-closed dispatch/release on writer errors. Durable and tamper-evident Ledger remains future work.
 
 - Add operator-only version-pinned HashiCorp KV v2 HTTPS imports via a provider interface. Imported credentials remain staged and require local activation; no live fetch or automatic provider revocation propagation.

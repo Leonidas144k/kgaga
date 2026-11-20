@@ -48,3 +48,34 @@ func TestAuditErrors(t *testing.T) {
 	e.Target=strings.Repeat("x",maxEventBytes)
 	if err:=NewRecorder(&b).Record(e); !errors.Is(err,ErrUnavailable) || b.Len()!=0 { t.Fatal("oversized event accepted") }
 }
+
+type recoverableWriter struct {
+	buf bytes.Buffer
+	calls int
+	fail bool
+}
+func (w *recoverableWriter) Write(p []byte)(int,error) {
+	w.calls++
+	if w.fail { return w.buf.Write(p[:len(p)/2]) }
+	return w.buf.Write(p)
+}
+
+func TestAuditFailureLatched(t *testing.T) {
+	id,err:=NewID(); if err!=nil { t.Fatal(err) }
+	e:=Event{AttemptID:id,Action:"credential_use",Phase:"attempt",Actor:"agent",VaultID:"fixture"}
+	w:=&recoverableWriter{fail:true}
+	r:=NewRecorder(w)
+	if !errors.Is(r.Record(e),ErrUnavailable) { t.Fatal("short write accepted") }
+	w.fail=false
+	before:=w.buf.Len()
+	var wg sync.WaitGroup
+	for i:=0;i<16;i++ {
+		wg.Add(1)
+		go func(){ defer wg.Done(); if !errors.Is(r.Record(e),ErrUnavailable) { t.Error("failed recorder resumed") } }()
+	}
+	wg.Wait()
+	if w.calls!=1 || w.buf.Len()!=before { t.Fatal("wrote additional bytes after stream failure") }
+	// A deliberately new recorder on a repaired/new stream can operate.
+	var repaired bytes.Buffer
+	if err:=NewRecorder(&repaired).Record(e); err!=nil { t.Fatal("new recorder failed") }
+}

@@ -140,3 +140,7 @@ Increment 7 passed repeated local lifecycle/injection tests and CI at 0c4bccf (4
 ### Vault increment 9
 
 Increment 8 passed repeated local provider/policy/vault/injection tests and CI at 2d4aafb (44750632476). Increment 9 adds correlated structured credential-use and operator audit, fixed metadata-only phases, checked intent writes before dispatch/mutation/release, sink failure tests and post-write live checks. Validation pending. No durable or tamper-evident Ledger, verified operator identity or proof of delivery/business success.
+
+### Vault increment 10
+
+Increment 9 corrected at 02c6948; repeated local audit/policy/vault/brokerage tests and full lifecycle passed, CI 44764585616 succeeded. Increment 10 latches audit sink write failures, removes redundant success log after final Vault check, tests revocation during audit writes, adds Vault binary/JSON parser fuzzing and release gates. Validation pending; internal preview only, production blockers remain open.

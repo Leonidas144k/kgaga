@@ -372,7 +372,9 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 				return
 			}
 		}
-		emitAudit(AuditEvent{AgentID:claims.AgentID,Owner:claims.Owner,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"ALLOW",Scopes:claims.Scopes})
+		// Vault already recorded checked release intent. Do not introduce
+		// another potentially blocking log write after its final live check.
+		if broker==nil { emitAudit(AuditEvent{AgentID:claims.AgentID,Owner:claims.Owner,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"ALLOW",Scopes:claims.Scopes}) }
 		for key,values:=range response.headers { for _,value:=range values { w.Header().Add(key,value) } }
 		w.WriteHeader(response.status)
 		if r.Method!="HEAD" && response.status!=204 && response.status!=205 { _,_=w.Write(response.body) }

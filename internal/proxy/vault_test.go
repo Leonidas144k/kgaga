@@ -28,9 +28,15 @@ import (
 type auditFixture struct {
 	buf bytes.Buffer
 	fail string
+	hook func(audit.Event) error
 }
 func (a *auditFixture) Write(p []byte)(int,error) {
 	if a.fail!="" && bytes.Contains(p,[]byte(`"phase":"`+a.fail+`"`)) { return 0,errors.New("synthetic audit sink failure") }
+	if a.hook!=nil {
+		var event audit.Event
+		if err:=json.Unmarshal(p,&event); err!=nil { return 0,err }
+		if err:=a.hook(event); err!=nil { return 0,err }
+	}
 	return a.buf.Write(p)
 }
 
@@ -43,7 +49,7 @@ func TestVaultCredentialInjection(t *testing.T) {
 	up:=httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
 		calls.Add(1)
 		expected:=secret
-		if mode.Load()==7 { expected="different-version-not-selected" }
+		if mode.Load()==7 || mode.Load()==8 { expected="different-version-not-selected" }
 		if r.TLS==nil || r.Header.Get("Authorization")!="Bearer "+expected || r.Header.Get("X-Kgaga-Verified-Agent")!="agent" ||
 			r.Header.Get("X-Agent-Passport")!="" || r.Header.Get(passport.ProofHeader)!="" || r.Header.Get("X-Injected")!="" { t.Error("incorrect guarded upstream request") }
 		switch mode.Load() {
@@ -52,6 +58,8 @@ func TestVaultCredentialInjection(t *testing.T) {
 		case 3: w.Header().Set("Location","https://elsewhere.example"); w.WriteHeader(302)
 		case 4: w.Header().Set("Content-Type","application/json"); _,_=w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
 		case 5: w.Header().Set("Content-Type","application/json"); w.Header().Set("MCP-Protocol-Version",secret); _,_=w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
+		case 8:
+			w.Header().Set("Content-Type","text/plain"); _,_=w.Write([]byte("protected response"))
 		case 6:
 			if err:=revokeActive(); err!=nil { t.Error("in-flight revocation failed") }
 			w.Header().Set("Content-Type","text/plain"); _,_=w.Write([]byte("protected response"))
@@ -168,8 +176,33 @@ func TestVaultCredentialInjection(t *testing.T) {
 	run(h,"agent","/api/rotated","GET","",scopes,false,204,true)
 	sink.fail="dispatch_intent"
 	run(h,"agent","/api/rotated","GET","",scopes,false,503,false)
+	// Even a recovered writer cannot resume this failed recorder.
+	sink.fail=""
+	run(h,"agent","/api/rotated","GET","",scopes,false,503,false)
+	// Explicitly replace the recorder in the isolated fixture only.
+	broker.audit=audit.NewRecorder(sink)
 	sink.fail="response_release_intent"
 	run(h,"agent","/api/rotated","GET","",scopes,false,503,true)
+	sink.fail=""
+	run(h,"agent","/api/rotated","GET","",scopes,false,503,false)
+	broker.audit=audit.NewRecorder(sink)
+	// Simulate revocation while a dispatch-intent write is in progress.
+	// The write succeeds, but the final passport check must stop dispatch.
+	sink.hook=func(e audit.Event) error {
+		if e.Phase=="dispatch_intent" { return rev.Revoke(e.PassportID) }
+		return nil
+	}
+	run(h,"agent","/api/rotated","GET","",scopes,false,403,false)
+	// A credential can also be revoked while release intent is written.
+	// The final lifecycle check must withhold the inspected response.
+	mode.Store(8)
+	sink.hook=func(e audit.Event) error {
+		if e.Phase=="response_release_intent" { return m.RevokeVersion("token",2) }
+		return nil
+	}
+	run(h,"agent","/api/rotated","GET","",scopes,false,403,true)
+	sink.hook=nil
+	run(h,"agent","/api/rotated","GET","",scopes,false,403,false)
 	// Deliberately do not log the supplied client auth, proof, request
 	// body, query or the selected bearer, even when an upstream echoes it.
 	rawAudit:=sink.buf.String()

@@ -37,3 +37,13 @@ The preview is for isolated development with synthetic data. A green CI pipeline
 - [ ] Review distribution license and private vulnerability reporting before publishing artifacts or a preview tag.
 
 Outstanding: independent protocol/cryptography review, sustained load tests, operational key custody, replay storage recovery and pruning, complete MCP compatibility, OS isolation, tamper-evident audit, multi-node consistency and certificate lifecycle. Final admission checks narrow but do not eliminate the revocation/dispatch race. No production assurance is claimed.
+
+## Vault v0.5.0 development-preview review
+
+- [x] Increments 1–9 local regression and lifecycle validation, including corrected audit commit 02c6948; CI 44764585616 succeeded.
+- [ ] Increment 10 local/CI regression and Vault parser fuzz validation.
+- [ ] Review final source diff, current dependency and exact intended supported toolchain vulnerability findings.
+- [ ] Approve synthetic-data internal preview scope; open/review/merge PR and verify main CI.
+- [ ] Before any distribution: resolve license and private security reporting, supported build toolchains, artifacts and recovery/migration documentation.
+
+Unresolved production gates: persistent KEK wrap budget and aggregate storage quotas, protected KEK custody/rotation, rollback resistance and crash recovery, trusted time, dynamic provider issuance/revocation, real provider interoperability, independent security review, sustained load tests, durable tamper-evident audit, and distributed consistency. No live credentials, production approval or release tag.
