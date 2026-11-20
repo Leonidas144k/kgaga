@@ -76,3 +76,7 @@ Replace unsigned stdio wrapper with authenticated single-passport signed frames,
 ### Gateway increment 5
 
 Bounded HTTP exchange with explicit forwarding header allowlists, no redirects or streaming, restricted UTF-8 JSON/text bodies, request/response secret-pattern checks including decoded JSON and query values, strict MCP response IDs, lifecycle recheck before response release, and signed gateway regression tests. Increment 4 passed local/CI at 6dced6b. Increment 5 validation pending. No comprehensive DLP or aggregate concurrency/security guarantee.
+
+### Gateway increment 6
+
+Mandatory local token-bucket agent rate limiting with optional strict YAML settings, stable ID keys, HTTP 429/Retry-After and bounded tracking capacity (503), per-session stdio rate limits, no depleted-bucket eviction, and deterministic concurrency/policy/gateway tests. Increment 5 passed local and CI at e8b8f78. Increment 6 validation pending. Limits are in-memory per handler/session, not distributed, durable or aggregate parent quotas.

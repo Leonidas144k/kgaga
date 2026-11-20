@@ -197,6 +197,48 @@ func TestAudienceGateway(t *testing.T) {
 		h.ServeHTTP(w,r)
 		if w.Code!=tc.want || calls.Load()!=before { t.Fatalf("route %s %s: status %d want %d, forwarded=%v",tc.method,tc.target,w.Code,tc.want,calls.Load()!=before) }
 	}
+	// A separate handler with a one-token burst proves enforcement on the
+	// authenticated path, including replacement passports and route changes.
+	limited:=*cfg
+	limited.RateLimit=&policy.RateLimitConfig{RequestsPerMinute:1,Burst:1,MaxAgents:2}
+	lh,err:=NewHandlerForAudience(up.URL,trust,&limited,"service-a",store,reg,replay)
+	if err!=nil { t.Fatal(err) }
+	limitedRequest:=func(token,target string,want int,signed bool) {
+		t.Helper()
+		r:=httptest.NewRequest("GET",target,nil)
+		r.Header.Set("X-Agent-Passport",token)
+		if signed { sign(r,token) }
+		before:=calls.Load()
+		w:=httptest.NewRecorder()
+		lh.ServeHTTP(w,r)
+		if w.Code!=want || (calls.Load()!=before)!=(want==204) { t.Fatalf("rate limit: got %d want %d",w.Code,want) }
+		if want==429 && w.Header().Get("Retry-After")!="60" { t.Fatal("missing retry-after") }
+	}
+	limitedRequest(mint("service-a"),"/api/db",403,false)
+	limitedRequest(mint("service-a"),"/api/db",204,true)
+	limitedRequest(mint("service-a"),"/api/db/items",429,true)
+	// A second registered identity has an independent bucket. The test
+	// upstream expects "agent", so use a separate upstream for this check.
+	var otherCalls atomic.Int32
+	otherUp:=httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+		otherCalls.Add(1)
+		w.WriteHeader(204)
+	}))
+	defer otherUp.Close()
+	if err:=reg.Register(registry.Agent{ID:"second-agent",Owner:"owner",Scopes:[]string{"db:read"},Audiences:[]string{"service-a"},HolderKey:encoded}); err!=nil { t.Fatal(err) }
+	other,err:=passport.MintBoundV2(priv,"second-agent","owner",[]string{"db:read"},"service-a",time.Minute,holder)
+	if err!=nil { t.Fatal(err) }
+	isolated,err:=NewHandlerForAudience(otherUp.URL,trust,&limited,"service-a",store,reg,replay)
+	if err!=nil { t.Fatal(err) }
+	for _,tc:=range []struct{token string;want int}{{mint("service-a"),204},{mint("service-a"),429},{other,204},{other,429}} {
+		r:=httptest.NewRequest("GET","/api/db",nil)
+		r.Header.Set("X-Agent-Passport",tc.token)
+		sign(r,tc.token)
+		w:=httptest.NewRecorder()
+		isolated.ServeHTTP(w,r)
+		if w.Code!=tc.want { t.Fatalf("agent isolation: got %d want %d",w.Code,tc.want) }
+	}
+	if otherCalls.Load()!=2 { t.Fatal("quota denial reached upstream") }
 	// A previously accepted passport is rejected immediately after revocation.
 	raw:=mint("service-a")
 	claims,err:=passport.VerifyV2(raw,key,"service-a")
@@ -258,7 +300,7 @@ func TestAudienceGateway(t *testing.T) {
 	check(fresh,503)
 	if err:=os.Rename(storePath,storePath+"-backup"); err!=nil { t.Fatal(err) }
 	check(fresh,503)
-	if calls.Load()!=14 { t.Fatalf("upstream calls %d want 14",calls.Load()) }
+	if calls.Load()!=15 { t.Fatalf("upstream calls %d want 15",calls.Load()) }
 	w:=httptest.NewRecorder()
 	h.ServeHTTP(w,httptest.NewRequest("GET","/.well-known/jwks.json",nil))
 	var jwks passport.JWKS

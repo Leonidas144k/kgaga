@@ -20,6 +20,7 @@ type MCPPolicy struct {
 }
 
 type Config struct {
+	RateLimit *RateLimitConfig `yaml:"rate_limit,omitempty"`
 	Version       string    `yaml:"version"`
 	RedactSecrets bool      `yaml:"redact_secrets"`
 	MCP           MCPPolicy `yaml:"mcp"`
@@ -28,6 +29,11 @@ type Config struct {
 
 const DefaultConfigYAML = `version: "2"
 redact_secrets: true
+
+rate_limit:
+  requests_per_minute: 120
+  burst: 40
+  max_agents: 4096
 
 mcp:
   allowed_tools: ["search", "read_file", "postgres.query"]

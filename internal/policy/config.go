@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
@@ -38,11 +39,21 @@ func Parse(data []byte) (*Config,error) {
 	if err:=d.Decode(&extra); err!=io.EOF { return nil,errors.New("policy must contain exactly one YAML document") }
 	if doc.Kind!=yaml.DocumentNode || len(doc.Content)!=1 { return nil,errors.New("invalid policy document") }
 	root:=doc.Content[0]
-	fields,err:=mapping(root,"policy","version","redact_secrets","mcp","rules")
+	fields,err:=mappingOptional(root,"policy",[]string{"version","redact_secrets","mcp","rules"},"rate_limit")
 	if err!=nil { return nil,err }
 	if err:=nodeType(fields["version"],yaml.ScalarNode,"!!str","version"); err!=nil { return nil,err }
 	if err:=nodeType(fields["redact_secrets"],yaml.ScalarNode,"!!bool","redact_secrets"); err!=nil { return nil,err }
 	if v:=fields["redact_secrets"].Value; v!="true" && v!="false" { return nil,errors.New("redact_secrets must be true or false") }
+	if node,ok:=fields["rate_limit"]; ok {
+		r,err:=mapping(node,"rate_limit","requests_per_minute","burst","max_agents")
+		if err!=nil { return nil,err }
+		for _,name:=range []string{"requests_per_minute","burst","max_agents"} {
+			n:=r[name]
+			if err:=nodeType(n,yaml.ScalarNode,"!!int","rate_limit."+name); err!=nil { return nil,err }
+			v,err:=strconv.Atoi(n.Value)
+			if err!=nil || strconv.Itoa(v)!=n.Value { return nil,fmt.Errorf("rate_limit.%s: expected decimal integer",name) }
+		}
+	}
 	mcp,err:=mapping(fields["mcp"],"mcp","allowed_tools","denied_tools")
 	if err!=nil { return nil,err }
 	for _,name:=range []string{"allowed_tools","denied_tools"} {
@@ -74,12 +85,16 @@ func nodeType(n *yaml.Node,kind yaml.Kind,tag,label string) error {
 }
 
 func mapping(n *yaml.Node,label string,required ...string)(map[string]*yaml.Node,error) {
+	return mappingOptional(n,label,required)
+}
+
+func mappingOptional(n *yaml.Node,label string,required []string,optional ...string)(map[string]*yaml.Node,error) {
 	if err:=nodeType(n,yaml.MappingNode,"!!map",label); err!=nil { return nil,err }
 	out:=make(map[string]*yaml.Node,len(required))
 	for i:=0;i<len(n.Content);i+=2 {
 		key:=n.Content[i]
 		if err:=nodeType(key,yaml.ScalarNode,"!!str",label+" key"); err!=nil { return nil,err }
-		if !slices.Contains(required,key.Value) { return nil,fmt.Errorf("%s: unknown field %q",label,key.Value) }
+		if !slices.Contains(required,key.Value) && !slices.Contains(optional,key.Value) { return nil,fmt.Errorf("%s: unknown field %q",label,key.Value) }
 		if _,exists:=out[key.Value]; exists { return nil,fmt.Errorf("%s: duplicate field %q",label,key.Value) }
 		out[key.Value]=n.Content[i+1]
 	}
@@ -119,6 +134,7 @@ func unique(values []string,max int,label string,valid func(string)bool) error {
 func (c *Config) Validate() error {
 	if c==nil { return errors.New("policy configuration required") }
 	if c.Version!="2" { return errors.New("policy version unsupported: use version 2") }
+	if c.RateLimit!=nil { if err:=c.RateLimit.Validate(); err!=nil { return err } }
 	if len(c.Rules)>maxRules { return errors.New("too many policy rules") }
 	if err:=unique(c.MCP.AllowedTools,256,"mcp.allowed_tools",func(v string)bool{return visible(v,128)}); err!=nil { return err }
 	if err:=unique(c.MCP.DeniedTools,256,"mcp.denied_tools",func(v string)bool{return visible(v,128)&&v!="*"}); err!=nil { return err }
@@ -141,6 +157,9 @@ func (c *Config) Validate() error {
 func (c *Config) Snapshot() (*Config,error) {
 	if err:=c.Validate(); err!=nil { return nil,err }
 	out:=*c
+	rate:=DefaultRateLimit()
+	if c.RateLimit!=nil { rate=*c.RateLimit }
+	out.RateLimit=&rate
 	out.MCP.AllowedTools=slices.Clone(c.MCP.AllowedTools)
 	out.MCP.DeniedTools=slices.Clone(c.MCP.DeniedTools)
 	out.Rules=slices.Clone(c.Rules)

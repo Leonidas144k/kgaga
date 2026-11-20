@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"strconv"
 	"time"
 
 	"github.com/Leonidas144k/kgaga/internal/mcp"
@@ -80,6 +81,8 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 	}
 	if err != nil { return nil,err }
 
+	limiter,err:=policy.NewRateLimiter(*cfg.RateLimit)
+	if err!=nil { return nil,err }
 	transport:=newUpstreamTransport()
 	serveJWKS := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -194,6 +197,15 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			if err!=nil {
 				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"BLOCK",Reason:"request proof rejected"})
 				http.Error(w,"request proof rejected",403); return
+			}
+			if retry,err:=limiter.Allow(claims.AgentID); err!=nil {
+				status:=http.StatusTooManyRequests
+				if errors.Is(err,policy.ErrRateCapacity) { status=http.StatusServiceUnavailable }
+				w.Header().Set("Retry-After",strconv.Itoa(retry))
+				w.Header().Set("Cache-Control","no-store")
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:err.Error()})
+				if r.URL.Path=="/mcp" { writeMCPError(w,status,-32603,"agent admission rate limited") } else { http.Error(w,"agent admission rate limited",status) }
+				return
 			}
 			if err:=replay.Consume(nonce); err!=nil {
 				status:=503

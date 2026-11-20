@@ -138,6 +138,21 @@ The HTTP gateway is no longer a transparent reverse proxy. It forwards only sele
 
 The existing `redact_secrets: true` setting now blocks recognized secret patterns in request and response payloads, JSON-decoded keys/strings, request query and selected metadata rather than rewriting signed data. The authenticated stdio transport uses the same payload scanner. Patterns are heuristic and do not recognize all credentials, arbitrary encodings, split strings, attachments or indirect leakage. Setting the flag false disables secret-pattern checks, not text/JSON validation or size bounds. This development-only restriction may break existing REST and MCP clients. Upstream TLS/mTLS policy, admission concurrency, complete protocol schemas and response streaming remain outstanding.
 
+### Agent rate limiting
+
+Both authenticated transports enforce an in-memory token bucket per registered agent ID. HTTP shares a bucket across all routes and passports for an agent within one gateway handler. Stdio uses a bucket for its pinned session. The optional policy block below is also the default when absent, so existing version 2 policies remain valid:
+
+```yaml
+rate_limit:
+  requests_per_minute: 120
+  burst: 40
+  max_agents: 4096
+```
+
+All three fields are required when the block is present; values must be decimal integers within 1..6000, 1..1000 and 1..16384 respectively. There is no off switch. After verifying the holder proof, charge one token before consuming the replay marker and before policy evaluation. Thus verified attempts that fail subsequent checks still cost a token. Unauthenticated attempts do not allocate agent buckets. HTTP rate denial returns 429 with Retry-After in seconds; when tracking capacity is exhausted, return 503 and Retry-After: 1. Stdio terminates the session on denial. Full buckets can be reclaimed when capacity is reached, but depleted buckets are never evicted to reset quotas. A replacement passport or issuer key does not reset a bucket.
+
+Limits are local to a handler/process and reset on restart. Stdio sessions and separate HTTP gateway instances do not share counters, and delegated children are charged by their own IDs, not a shared parent budget. Repeated captured valid proofs may consume quota before replay rejection; the nonce store does not grow on rate-limited attempts. This is not a durable billing quota or global DoS defense. Aggregate concurrency, pre-authentication admission control, and persistent replay storage limits remain future work.
+
 ### Start an audience-bound gateway (isolated test environment only)
 
 ```bash

@@ -51,3 +51,29 @@ func TestExplicitEmptyToolAllowlist(t *testing.T) {
 	if ok,_:=c.Authorize("GET","/",[]string{"admin"}); ok { t.Fatal("empty rules permitted HTTP") }
 	if ok,_:=c.AuthorizeMCP("tools/call","search","mcp:tool:search",[]string{"admin"}); ok { t.Fatal("empty allowlist permitted tool") }
 }
+
+func TestRateLimitConfig(t *testing.T) {
+	base:=strings.Replace(DefaultConfigYAML,"rate_limit:\n  requests_per_minute: 120\n  burst: 40\n  max_agents: 4096\n\n","",1)
+	c,err:=Parse([]byte(base))
+	if err!=nil { t.Fatal(err) }
+	s,err:=c.Snapshot()
+	if err!=nil || s.RateLimit==nil || *s.RateLimit!=DefaultRateLimit() { t.Fatal("missing mandatory default") }
+	for _,block:=range []string{
+		"rate_limit: null",
+		"rate_limit: {requests_per_minute: 0, burst: 2, max_agents: 1}",
+		"rate_limit: {requests_per_minute: 6001, burst: 2, max_agents: 1}",
+		"rate_limit: {requests_per_minute: 10, burst: 0, max_agents: 1}",
+		"rate_limit: {requests_per_minute: 10, burst: 2, max_agents: 16385}",
+		"rate_limit: {requests_per_minute: 10, burst: 2}",
+		"rate_limit: {requests_per_minute: 10, burst: 2, max_agents: 1, enabled: false}",
+		"rate_limit: {requests_per_minute: \"10\", burst: 2, max_agents: 1}",
+		"rate_limit: {requests_per_minute: 0x10, burst: 2, max_agents: 1}",
+		"rate_limit: {requests_per_minute: 10, burst: 2, burst: 3, max_agents: 1}",
+	} { if _,err:=Parse([]byte(base+"\n"+block+"\n")); err==nil { t.Fatalf("invalid rate config accepted: %s",block) } }
+	c,err=Parse([]byte(base+"\nrate_limit: {requests_per_minute: 10, burst: 2, max_agents: 1}\n"))
+	if err!=nil { t.Fatal(err) }
+	s,err=c.Snapshot()
+	if err!=nil { t.Fatal(err) }
+	c.RateLimit.Burst=99
+	if s.RateLimit.Burst!=2 { t.Fatal("rate snapshot mutated") }
+}

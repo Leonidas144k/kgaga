@@ -59,6 +59,8 @@ func RunStdioProxy(cmdPath string,cmdArgs []string,cfg *policy.Config,audience s
 	if err:=passport.ValidateAudience(audience); err!=nil { return err }
 	cfg,err:=cfg.Snapshot()
 	if err!=nil { return err }
+	limiter,err:=policy.NewRateLimiter(*cfg.RateLimit)
+	if err!=nil { return err }
 	for _,ready:=range []func()error{trust.Ready,reg.Ready,rev.Ready,replay.Ready} {
 		if err:=ready(); err!=nil { return err }
 	}
@@ -89,6 +91,10 @@ func RunStdioProxy(cmdPath string,cmdArgs []string,cfg *policy.Config,audience s
 		if err:=delegation.Check(claims,audience,trust,reg,rev); err!=nil { return errors.New("stdio delegation rejected") }
 		nonce,err:=passport.VerifyRequest(proof,token,holder,stdioBinding(body),time.Now())
 		if err!=nil { return errors.New("stdio proof rejected") }
+		if _,err:=limiter.Allow(claims.AgentID); err!=nil {
+			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:"STDIO",Decision:"BLOCK",Reason:err.Error()})
+			return err
+		}
 		if err:=replay.Consume(nonce); err!=nil { return errors.New("stdio replay check rejected") }
 		info,err:=mcp.InspectStdio(body)
 		if err!=nil { return errors.New("stdio MCP message rejected") }

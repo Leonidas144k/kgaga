@@ -35,6 +35,8 @@ expect_failure() {
 cp kgaga.yaml invalid.yaml
 printf '\nunknown_field: true\n' >> invalid.yaml
 expect_failure "invalid policy" "$kgaga" policy-check --config invalid.yaml
+sed 's/requests_per_minute: 120/requests_per_minute: 0/' kgaga.yaml > invalid-rate.yaml
+expect_failure "invalid policy" "$kgaga" policy-check --config invalid-rate.yaml
 expect_failure "open agent registry failed" "$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:read --audience support-api
 "$kgaga" agents-init
 expect_failure "mint rejected: agent authorization denied" "$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:read --audience support-api
