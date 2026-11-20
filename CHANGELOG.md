@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.5.0 vault development
 
+- Add managed envelope encryption with separate local operator KEK custody, fresh DEKs, authenticated wrapping and single-file immutable publication. No automatic key rotation or gateway access.
+
 - Add private local immutable encrypted record storage with explicit identity, bounded reads, exclusive publication and restart/concurrency regression tests. Caller-managed data keys only.
 
 - Add isolated AES-256-GCM record primitives with authenticated record metadata, bounded versioned ciphertext format, cryptographic key/nonce generation and tamper tests. No storage or agent/gateway secret API yet.

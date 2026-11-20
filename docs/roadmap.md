@@ -112,3 +112,7 @@ Separate internal/vault package and documented architecture. AES-256-GCM record 
 ### Vault increment 2
 
 Increment 1 passed ten local race-test repetitions, full lifecycle and CI at 15b5236 (44714133145). Increment 2 adds explicit initialized vault identity, bounded private local encrypted record storage, exclusive immutable version publication, normal restart retrieval with caller-owned key and expected context, and tampering, substitution, permissions and concurrent writer tests. Validation pending. No live secrets; no key custody, automatic recovery, aggregate capacity bounds or gateway access.
+
+### Vault increment 3
+
+Increment 2 passed local repeated race tests and CI at a2689b1 (44719713905). Increment 3 adds external private KEK creation/loading, per-attempt random DEKs, domain-separated AES-GCM wrapping, immutable managed KGE1 records and restart/tamper/custody/concurrent publication tests. Validation pending. No live secrets, enforced KEK usage counter, automatic rotation, KMS or agent access yet.

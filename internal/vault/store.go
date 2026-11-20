@@ -119,6 +119,13 @@ func (s *Store) Put(key Key,ctx RecordContext,plaintext []byte) error {
 	if _,err:=os.Lstat(path); err==nil { return ErrRecordExists } else if !os.IsNotExist(err) { return err }
 	record,err:=SealRecord(key,ctx,plaintext)
 	if err!=nil { return err }
+	return s.publish(path,record)
+}
+
+// Shared exclusive publication for raw and managed records. Both formats
+// use the same slot so an upgrade cannot silently replace an old version.
+func (s *Store) publish(path string,record []byte) error {
+	if err:=s.Ready(); err!=nil { return err }
 	f,err:=os.CreateTemp(s.dir,".pending-")
 	if err!=nil { return err }
 	tmp:=f.Name()
@@ -145,14 +152,22 @@ func (s *Store) Put(key Key,ctx RecordContext,plaintext []byte) error {
 func (s *Store) Get(key Key,ctx RecordContext)([]byte,error) {
 	path,err:=s.recordPath(ctx)
 	if err!=nil { return nil,err }
-	record,_,err:=readPrivate(path,maxRecordBytes)
+	record,err:=s.readRecord(path,maxRecordBytes)
+	if err!=nil { return nil,err }
+	p,err:=OpenRecord(key,ctx,record)
+	if err!=nil { return nil,err }
+	if err:=s.Ready(); err!=nil { clear(p); return nil,err }
+	return p,nil
+}
+
+// readRecord applies the same filesystem checks to all record formats.
+func (s *Store) readRecord(path string,max int)([]byte,error) {
+	record,_,err:=readPrivate(path,max)
 	if err!=nil {
 		if err:=s.Ready(); err!=nil { return nil,err }
 		if os.IsNotExist(err) { return nil,ErrRecordNotFound }
 		return nil,ErrStoreUnavailable
 	}
-	p,err:=OpenRecord(key,ctx,record)
-	if err!=nil { return nil,err }
-	if err:=s.Ready(); err!=nil { clear(p); return nil,err }
-	return p,nil
+	if err:=s.Ready(); err!=nil { return nil,err }
+	return record,nil
 }
