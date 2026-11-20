@@ -49,7 +49,15 @@ func (v *VaultGateway) credential(c *passport.AgentClaims,audience,origin string
 	sel,err:=v.policy.Authorize(c,audience,op)
 	if err!=nil { return nil,err }
 	if sel.VaultID!=v.id { return nil,policy.ErrVaultDenied }
-	secret,expiry,err:=v.store.GetBearer(sel.SecretName,sel.Version)
+	secret,expiry,err:=v.store.GetActiveBearer(sel.SecretName,sel.Version)
 	if err!=nil { return nil,err }
-	return newCredentialLease(secret,expiry,c.ExpiresAt.Time,time.Now())
+	lease,err:=newCredentialLease(secret,expiry,c.ExpiresAt.Time,time.Now())
+	if err!=nil { return nil,err }
+	lease.selection=sel
+	return lease,nil
+}
+
+func (v *VaultGateway) checkActive(sel policy.VaultSelection) error {
+	if sel.VaultID!=v.id { return policy.ErrVaultDenied }
+	return v.store.CheckActive(sel.SecretName,sel.Version)
 }

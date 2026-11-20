@@ -4,6 +4,8 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"github.com/Leonidas144k/kgaga/internal/policy"
 )
 
 const maxVaultLease = 15*time.Second
@@ -17,6 +19,7 @@ type credentialLease struct {
 	secret []byte
 	deadline time.Time
 	used bool
+	selection policy.VaultSelection
 }
 
 func newCredentialLease(secret []byte,credentialExpiry,passportExpiry,now time.Time)(*credentialLease,error) {

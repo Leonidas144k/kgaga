@@ -340,7 +340,7 @@ func main() {
 		if err!=nil { log.Fatalf("invalid policy: %v",err) }
 		fmt.Printf("PASS: policy version %s, %d HTTP rules, %d allowed MCP tools\n",cfg.Version,len(cfg.Rules),len(cfg.MCP.AllowedTools))
 
-	case "vault-init", "vault-put":
+	case "vault-init", "vault-put", "vault-activate", "vault-revoke":
 		runVaultOperator(os.Args[1],os.Args[2:])
 
 	case "proxy":
@@ -494,7 +494,9 @@ Usage:
   kgaga revoke --id <jti>                                    Revoke a passport
   kgaga verify --audience <service>                          Verify a passport from stdin and check revocation
   kgaga vault-init --vault-dir <dir> --vault-id <id> --vault-kek-file <path> --vault-kek-id <id>  Initialize operator vault
-  kgaga vault-put --vault-dir <dir> --vault-id <id> --vault-kek-file <path> --vault-kek-id <id> --name <name> --version <n> --not-before <unix> --expires-at <unix>  Store timed bearer token from stdin
+  kgaga vault-put --vault-dir <dir> --vault-id <id> --vault-kek-file <path> --vault-kek-id <id> --name <name> --version <n> --not-before <unix> --expires-at <unix>  Stage timed bearer token from stdin
+  kgaga vault-activate --vault-dir <dir> --vault-id <id> --vault-kek-file <path> --vault-kek-id <id> --name <name> --version <n>  Activate newer version
+  kgaga vault-revoke --vault-dir <dir> --vault-id <id> --vault-kek-file <path> --vault-kek-id <id> --name <name> --version <n>  Revoke version
   kgaga policy-check --config <file>                        Validate policy without starting gateway
   kgaga proxy --listen 127.0.0.1:8080 --target <https-url> --audience <service>          Start the security gateway (see proxy --help for TLS flags)
   kgaga stdio-frame --holder-key <pem> --passport-file <file>  Sign a JSON-RPC message from stdin

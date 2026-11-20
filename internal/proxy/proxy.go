@@ -16,6 +16,7 @@ import (
 	"github.com/Leonidas144k/kgaga/internal/passport"
 	"github.com/Leonidas144k/kgaga/internal/policy"
 	"github.com/Leonidas144k/kgaga/internal/revocation"
+	"github.com/Leonidas144k/kgaga/internal/vault"
 	"github.com/Leonidas144k/kgaga/internal/registry"
 	"github.com/Leonidas144k/kgaga/internal/keyring"
 	"github.com/Leonidas144k/kgaga/internal/delegation"
@@ -289,19 +290,23 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		}
 		var secret []byte
 		var leaseDeadline time.Time
+		var selection policy.VaultSelection
 		if broker!=nil {
 			lease,err:=broker.credential(claims,audience,targetURL,r,mcpInfo)
 			if err!=nil {
 				status:=http.StatusServiceUnavailable
-				if errors.Is(err,policy.ErrVaultDenied) { status=http.StatusForbidden }
+				if errors.Is(err,policy.ErrVaultDenied) || errors.Is(err,vault.ErrInactiveVersion) { status=http.StatusForbidden }
 				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault credential unavailable or denied"})
 				if isMCP { writeMCPError(w,status,-32603,"vault credential unavailable or denied") } else { http.Error(w,"vault credential unavailable or denied",status) }
 				return
 			}
 			defer lease.close()
+			selection=lease.selection
 			// Storage lookup is potentially slow. Repeat live checks after
 			// the lookup so a stale decision cannot authorize injection.
 			e:=checkLive(rawToken,audience,trust,reg,store)
+			if e==nil { _,e=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now()) }
+			if e==nil { e=broker.checkActive(selection) }
 			if e==nil { _,e=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now()) }
 			if e==nil { secret,leaseDeadline,e=lease.consume(time.Now()) }
 			if e!=nil {
@@ -326,8 +331,8 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 				return
 			}
 		}
-		if broker!=nil && !time.Now().Before(leaseDeadline) {
-			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault lease expired before response"})
+		if broker!=nil && (broker.checkActive(selection)!=nil || !time.Now().Before(leaseDeadline)) {
+			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault lifecycle or lease check failed before response"})
 			if isMCP { writeMCPError(w,403,-32603,"response access denied") } else { http.Error(w,"response access denied",403) }
 			return
 		}

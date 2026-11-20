@@ -27,9 +27,12 @@ func TestVaultCredentialInjection(t *testing.T) {
 	const secret="synthetic-vault-token-0123456789"
 	var calls atomic.Int32
 	var mode atomic.Int32
+	var revokeActive func() error
 	up:=httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
 		calls.Add(1)
-		if r.TLS==nil || r.Header.Get("Authorization")!="Bearer "+secret || r.Header.Get("X-Kgaga-Verified-Agent")!="agent" ||
+		expected:=secret
+		if mode.Load()==7 { expected="different-version-not-selected" }
+		if r.TLS==nil || r.Header.Get("Authorization")!="Bearer "+expected || r.Header.Get("X-Kgaga-Verified-Agent")!="agent" ||
 			r.Header.Get("X-Agent-Passport")!="" || r.Header.Get(passport.ProofHeader)!="" || r.Header.Get("X-Injected")!="" { t.Error("incorrect guarded upstream request") }
 		switch mode.Load() {
 		case 1: w.Header().Set("Content-Type","text/plain"); _,_=w.Write([]byte(secret))
@@ -37,6 +40,9 @@ func TestVaultCredentialInjection(t *testing.T) {
 		case 3: w.Header().Set("Location","https://elsewhere.example"); w.WriteHeader(302)
 		case 4: w.Header().Set("Content-Type","application/json"); _,_=w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
 		case 5: w.Header().Set("Content-Type","application/json"); w.Header().Set("MCP-Protocol-Version",secret); _,_=w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
+		case 6:
+			if err:=revokeActive(); err!=nil { t.Error("in-flight revocation failed") }
+			w.Header().Set("Content-Type","text/plain"); _,_=w.Write([]byte("protected response"))
 		default: w.Header().Set("X-Private",secret); w.WriteHeader(204)
 		}
 	}))
@@ -78,6 +84,7 @@ func TestVaultCredentialInjection(t *testing.T) {
 	if err:=m.PutBearer("token",2,[]byte("different-version-not-selected"),now-10,now+600); err!=nil { t.Fatal(err) }
 	if err:=m.PutBearer("token",3,[]byte(secret),now+600,now+1200); err!=nil { t.Fatal(err) }
 	if err:=m.Put("token",4,[]byte(secret)); err!=nil { t.Fatal(err) }
+	revokeActive=func()error{return m.RevokeVersion("token",1)}
 	grant:=func(path,method,mcp,tool,scope string,version int)string{
 		return fmt.Sprintf(`  - agent_id: "agent"
     owner: "owner"
@@ -94,7 +101,7 @@ func TestVaultCredentialInjection(t *testing.T) {
 	}
 	policyPath:=filepath.Join(dir,"vault.yaml")
 	id:=hex.EncodeToString(vid[:])
-	raw:=fmt.Sprintf("version: \"1\"\nvault_id: \"%s\"\ngrants:\n",id)+grant("/api","GET","","","read",1)+grant("/api/missing","GET","","","read",9)+grant("/api/future","GET","","","read",3)+grant("/api/legacy","GET","","","read",4)+grant("/mcp","POST","tools/call","search","mcp:tool:search",1)
+	raw:=fmt.Sprintf("version: \"1\"\nvault_id: \"%s\"\ngrants:\n",id)+grant("/api","GET","","","read",1)+grant("/api/rotated","GET","","","read",2)+grant("/api/missing","GET","","","read",9)+grant("/api/future","GET","","","read",3)+grant("/api/legacy","GET","","","read",4)+grant("/mcp","POST","tools/call","search","mcp:tool:search",1)
 	if err:=os.WriteFile(policyPath,[]byte(raw),0600); err!=nil { t.Fatal(err) }
 	broker,err:=OpenVaultGateway(policyPath,vdir,id,keyPath,hex.EncodeToString(kid[:])); if err!=nil { t.Fatal(err) }
 	cfg:=&policy.Config{Version:"2",RedactSecrets:true,MCP:policy.MCPPolicy{AllowedTools:[]string{"search","read_file"}},Rules:[]policy.Rule{{PathPrefix:"/api",AllowedScopes:[]string{"read"},AllowedMethods:[]string{"GET"}}}}
@@ -117,17 +124,19 @@ func TestVaultCredentialInjection(t *testing.T) {
 		r.Header.Set("X-Injected","spoof")
 		before:=calls.Load()
 		w:=httptest.NewRecorder(); handler.ServeHTTP(w,r)
-		if w.Code!=want || (calls.Load()!=before)!=dispatch || bytes.Contains(w.Body.Bytes(),[]byte(secret)) || w.Header().Get("Location")!="" || w.Header().Get("X-Private")!="" { t.Fatalf("unexpected result: status=%d want=%d dispatched=%v",w.Code,want,calls.Load()!=before) }
+		if w.Code!=want || (calls.Load()!=before)!=dispatch || bytes.Contains(w.Body.Bytes(),[]byte(secret)) || (want==403 && strings.Contains(w.Body.String(),"protected response")) || w.Header().Get("Location")!="" || w.Header().Get("X-Private")!="" { t.Fatalf("unexpected result: status=%d want=%d dispatched=%v",w.Code,want,calls.Load()!=before) }
 		for _,values:=range w.Header() { for _,value:=range values { if strings.Contains(value,secret) { t.Fatal("credential in response header") } } }
 	}
+	run(h,"agent","/api","GET","",scopes,false,403,false)
+	if err:=m.Activate("token",1); err!=nil { t.Fatal(err) }
 	run(h,"agent","/api","GET","",scopes,false,204,true)
 	run(h,"other","/api","GET","",scopes,false,403,false)
 	run(h,"agent","/api","GET","",[]string{"read"},false,403,false)
 	run(h,"agent","/api?x=1","GET","",scopes,false,403,false)
 	run(h,"agent","/api/ungranted","GET","",scopes,false,403,false)
-	run(h,"agent","/api/missing","GET","",scopes,false,503,false)
-	run(h,"agent","/api/future","GET","",scopes,false,503,false)
-	run(h,"agent","/api/legacy","GET","",scopes,false,503,false)
+	run(h,"agent","/api/missing","GET","",scopes,false,403,false)
+	run(h,"agent","/api/future","GET","",scopes,false,403,false)
+	run(h,"agent","/api/legacy","GET","",scopes,false,403,false)
 	for _,v:=range []int32{1,2,3} { mode.Store(v); run(h,"agent","/api","GET","",scopes,false,502,true) }
 	body:=`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search"}}`
 	mode.Store(4)
@@ -135,4 +144,12 @@ func TestVaultCredentialInjection(t *testing.T) {
 	run(h,"agent","/mcp","POST",body,scopes,true,403,false)
 	mode.Store(5)
 	run(h,"agent","/mcp","POST",body,scopes,false,502,true)
+	// Revocation during upstream execution must withhold the response.
+	mode.Store(6)
+	run(h,"agent","/api","GET","",scopes,false,403,true)
+	run(h,"agent","/api","GET","",scopes,false,403,false)
+	if err:=m.Activate("token",2); err!=nil { t.Fatal(err) }
+	mode.Store(7)
+	run(h,"agent","/api","GET","",scopes,false,403,false)
+	run(h,"agent","/api/rotated","GET","",scopes,false,204,true)
 }

@@ -34,14 +34,30 @@ func runVaultOperator(command string,args []string) {
 		fmt.Println("Initialized operator vault and external master key")
 		return
 	}
-	if *name=="" || *version==0 || *start<=0 || *end<=*start || *end-*start>3600 { log.Fatal("name, positive version and explicit validity window of at most 3600 seconds required") }
+	if *name=="" || *version==0 { log.Fatal("name and positive version required") }
+	if command=="vault-put" {
+		if *start<=0 || *end<=*start || *end-*start>3600 { log.Fatal("explicit validity window of at most 3600 seconds required") }
+	} else if *start!=0 || *end!=0 { log.Fatal("validity flags only accepted by vault-put") }
 	s,err:=vault.Open(*dir,id); if err!=nil { log.Fatal("vault open failed") }
 	m,err:=s.OpenManaged(*keyFile,keyID); if err!=nil { log.Fatal("master key open failed") }
+	switch command {
+	case "vault-activate":
+		if err:=m.Activate(*name,*version); err!=nil { log.Fatal("vault activation failed") }
+		fmt.Println("Activated credential version; lower versions retired")
+		return
+	case "vault-revoke":
+		if err:=m.RevokeVersion(*name,*version); err!=nil { log.Fatal("vault revocation failed") }
+		fmt.Println("Credential version revoked or already retired")
+		return
+	case "vault-put":
+	default:
+		log.Fatal("invalid vault command")
+	}
 	info,err:=os.Stdin.Stat()
 	if err!=nil || info.Mode()&os.ModeCharDevice!=0 { log.Fatal("provide exact token bytes via protected stdin source, not terminal input") }
 	token,err:=io.ReadAll(io.LimitReader(os.Stdin,4097))
 	defer clear(token)
 	if err!=nil || vault.ValidateBearer(token)!=nil { log.Fatal("invalid bearer token input") }
 	if err:=m.PutBearer(*name,*version,token,*start,*end); err!=nil { log.Fatal("vault record publication failed") }
-	fmt.Println("Published immutable encrypted vault record")
+	fmt.Println("Published staged immutable encrypted vault record")
 }

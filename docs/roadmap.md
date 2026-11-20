@@ -128,3 +128,7 @@ Increment 4 passed repeated local policy/vault tests and CI at b6a5079 (44727758
 ### Vault increment 6
 
 Increment 5 passed five repeated local HTTPS injection race tests, full regression/lifecycle and CI at 169dba1 (44728550778). Increment 6 adds authenticated timed bearer records, mandatory expiry metadata on provisioning, maximum one-hour credential window, one-use internal leases capped at 15 seconds or remaining credential/passport life, transport deadlines and final release checks. Negative tests include legacy/future/expired record denial and lease concurrency/deadline. Validation pending. No provider-side issuance or revocation guarantees.
+
+### Vault increment 7
+
+Increment 6 passed repeated local lease/injection tests, regression lifecycle and CI at a3dd181 (44729786353). Increment 7 adds staged/active/retired/revoked versions, HMAC-authenticated bounded per-name lifecycle state, exclusive administrative update locks, explicit activation and revocation commands, monotonic rotation and live gateway checks before decryption/dispatch/response release. Includes restart, tamper, cross-name, concurrent activation and in-flight revocation tests. Validation pending; no rollback resistance, provider-side revocation, master key rotation or production assurance.

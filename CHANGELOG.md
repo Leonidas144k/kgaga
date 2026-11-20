@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.5.0 vault development
 
+- Add staged/active credential lifecycle with explicit activation, monotonic rotation, revocation, authenticated persistent state and live gateway checks. Existing records require activation; pinned policies do not automatically advance.
+
 - Require authenticated timed bearer records in Vault mode; enforce one-hour maximum credential validity and per-request single-use leases capped at 15 seconds, with deadline-bound exchanges. Existing untimed tokens require explicit new version provisioning.
 
 - Add opt-in HTTPS Vault gateway mode with mandatory exact grants, fixed bearer injection, exact-token response inspection and local operator stdin provisioning. No general DLP or production assurance.

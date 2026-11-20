@@ -57,3 +57,5 @@ Vault increment 004 adds a separate strict, immutable Vault policy evaluator in 
 Vault increment 005 wires the exact policy and managed store into explicit authenticated HTTPS gateway mode. All protected operations require a matching Vault grant; fixed bearer injection occurs only in the outbound request, with exact-token response checks. Operator-only initialization and stdin provisioning commands added. No production assurance, leases, rotation or agent retrieval endpoint.
 
 Vault increment 006 requires authenticated credential validity metadata and internal one-use leases, with deadline-limited HTTPS exchanges and response release. Untimed records fail closed in Vault mode; true provider-issued ephemeral tokens remain future work.
+
+Vault increment 007 adds authenticated persistent per-name lifecycle metadata, explicit activation and revocation, monotonic credential version rotation, live lifecycle checks before dispatch and response release, and operator CLI commands. Policy grants remain pinned. Master key rotation, external provider revocation and rollback resistance remain open.
