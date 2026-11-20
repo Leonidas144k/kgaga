@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 const DefaultDir = "kgaga-revocations"
@@ -18,7 +17,6 @@ var ErrRevoked = errors.New("passport revoked")
 // Store pins the directory identity for the lifetime of the process.
 // Its directory and parent must be protected from untrusted writes.
 type Store struct {
-	replayMu sync.Mutex
 	dir string
 	info os.FileInfo
 }

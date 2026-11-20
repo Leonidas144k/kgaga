@@ -84,3 +84,7 @@ Mandatory local token-bucket agent rate limiting with optional strict YAML setti
 ### Gateway increment 7
 
 Fixed aggregate HTTP admission and concurrency ceilings, capped accepted TCP and upstream connections, write deadline, persistent replay reservation ceiling with legacy migration and cross-process lock, and regression tests. Increment 6 passed local and CI at 730a8e6. Increment 7 validation pending. No automated pruning, complete disk accounting, distributed quotas, or production DoS guarantee.
+
+#### Increment 7 contention correction
+
+CI passed at 186079b but local race tests reproduced premature 100 ms replay quota lock failures under filesystem contention. Use one filesystem lock protocol with a three-second acquisition budget and typed busy error; remove the unbounded per-Store mutex queue. Test deliberate slow-writer contention, fail-closed timeout, duplicate nonce exclusion, persistent quota count and retry only the pre-reservation busy outcome in concurrent tests. Local/CI revalidation required.

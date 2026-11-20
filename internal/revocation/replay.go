@@ -14,6 +14,10 @@ import (
 const MaxReplayMarkers = 1000000
 
 var ErrReplayCapacity = errors.New("replay store quota exhausted")
+var ErrReplayBusy = errors.New("replay quota lock unavailable")
+
+const replayLockWait = 3*time.Second
+const replayLockPoll = 10*time.Millisecond
 
 const countName = ".replay-count"
 const lockName = ".replay-lock"
@@ -26,20 +30,29 @@ func (s *Store) Consume(id string) error {
 	return s.consumeBounded(id,MaxReplayMarkers)
 }
 
-func (s *Store) consumeBounded(id string,limit int) (result error) {
+func (s *Store) consumeBounded(id string,limit int) error {
+	return s.consumeWithWait(id,limit,replayLockWait)
+}
+
+// All callers, including concurrent calls on the same Store, use the
+// same filesystem exclusion protocol. No unbounded in-process mutex
+// queue precedes the bounded lock acquisition.
+func (s *Store) consumeWithWait(id string,limit int,wait time.Duration) (result error) {
 	if limit<1 || limit>MaxReplayMarkers { return errors.New("invalid replay quota") }
 	if _,err:=s.marker(id); err!=nil { return err }
-	s.replayMu.Lock()
-	defer s.replayMu.Unlock()
 	if err:=s.ready(); err!=nil { return err }
 	lock:=filepath.Join(s.dir,lockName)
-	deadline:=time.Now().Add(100*time.Millisecond)
+	deadline:=time.Now().Add(wait)
 	for {
+		if err:=s.ready(); err!=nil { return err }
 		err:=os.Mkdir(lock,0700)
 		if err==nil { break }
 		if !os.IsExist(err) { return err }
-		if !time.Now().Before(deadline) { return errors.New("replay quota lock unavailable") }
-		time.Sleep(5*time.Millisecond)
+		remaining:=time.Until(deadline)
+		if remaining<=0 { return ErrReplayBusy }
+		time.Sleep(min(remaining,replayLockPoll))
+		// Do not acquire a lock after exhausting the contention budget.
+		if !time.Now().Before(deadline) { return ErrReplayBusy }
 	}
 	defer func(){
 		if err:=s.ready(); err!=nil { result=err; return }
