@@ -53,7 +53,7 @@ func TestAudienceGateway(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer up.Close()
-	cfg := &policy.Config{Rules:[]policy.Rule{{PathPrefix:"/api/db",AllowedScopes:[]string{"db:read"}}}}
+	cfg := &policy.Config{Rules:[]policy.Rule{{PathPrefix:"/api/db",AllowedScopes:[]string{"db:read"},AllowedMethods:[]string{"GET"}}}}
 	storePath:=filepath.Join(dir,"revocations")
 	if err:=revocation.Init(storePath); err!=nil { t.Fatal(err) }
 	store,err:=revocation.Open(storePath)
@@ -99,6 +99,30 @@ func TestAudienceGateway(t *testing.T) {
 			h.ServeHTTP(w,r)
 			if w.Code != tc.want { t.Fatalf("status %d want %d",w.Code,tc.want) }
 		})
+	}
+	// Possession of a valid passport and proof must not bypass route policy.
+	for _,tc:=range []struct{method,target,header,value string; want int}{
+		{"POST","/api/db","","",403},
+		{"DELETE","/api/db","","",403},
+		{"HEAD","/api/db","","",403},
+		{"GET","/api/db-extra","","",403},
+		{"GET","/api/db/../other","","",400},
+		{"GET","/api/db%2fother","","",400},
+		{"GET","/api/db//other","","",400},
+		{"GET","/api/db;other","","",400},
+		{"GET","/api/db","X-HTTP-Method-Override","DELETE",400},
+		{"GET","/api/db","Mcp-Method","tools/call",400},
+		{"GET","/api/db","X-Rewrite-URL","/other",400},
+	} {
+		r:=httptest.NewRequest(tc.method,tc.target,nil)
+		raw:=mint("service-a")
+		r.Header.Set("X-Agent-Passport",raw)
+		if tc.header!="" { r.Header.Set(tc.header,tc.value) }
+		sign(r,raw)
+		w:=httptest.NewRecorder()
+		before:=calls.Load()
+		h.ServeHTTP(w,r)
+		if w.Code!=tc.want || calls.Load()!=before { t.Fatalf("route %s %s: status %d want %d, forwarded=%v",tc.method,tc.target,w.Code,tc.want,calls.Load()!=before) }
 	}
 	// A previously accepted passport is rejected immediately after revocation.
 	raw:=mint("service-a")

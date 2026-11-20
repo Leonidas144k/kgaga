@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — v0.4.0 gateway development
+
+- HTTP policy version 2 requires explicit allowed methods; most-specific segment prefix wins, no broader fallback.
+- Reject ambiguous/nonliteral paths, common routing overrides, upstream base paths/queries and header-selected MCP routing.
+- Existing v1 policies require intentional migration. Regression tests added; full MCP and configuration hardening remain pending.
+
+
 ## Unreleased — v0.3.0 identity preview
 
 ### Added

@@ -112,6 +112,12 @@ $TOKEN | kgaga verify --audience "support-api"
 
 Replace the example agent name, owner, and scopes with the values required for your agent.
 
+### HTTP policy v2 (gateway development branch)
+
+Existing policy files with version "1" will no longer load. Back up the policy outside source control, set `version: "2"`, and explicitly add `allowed_methods` to every HTTP rule. Review scopes rather than automatically granting old methods. The bundled defaults permit GET/HEAD for the database read rule and POST for the payments rule. The most specific segment-boundary prefix wins; a denial never falls back to a broader rule. Duplicate winning rules deny; method names are exact and `deny_methods` overrides the winning rule's allowlist. No allowlist means no access.
+
+Routes are restricted to literal ASCII unreserved path segments, without percent escapes, duplicate slashes, trailing slash aliases, dot segments or matrix parameters. Upstream targets must be origin URLs without a base path or query. MCP is selected by the exact /mcp route and POST only; nonempty MCP headers elsewhere and common alternate routing/method override headers are rejected. Use a case-sensitive upstream with matching path semantics; this is not full HTTP/MCP integrity or policy schema validation. Query/body-based method overrides and other upstream-specific routing conventions must be disabled by the operator.
+
 ### Start an audience-bound gateway (isolated test environment only)
 
 ```bash

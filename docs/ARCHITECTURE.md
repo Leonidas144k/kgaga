@@ -20,7 +20,7 @@ Status: development preview, reviewed against 662eafd.
 | revocation | Persistent credential and separate proof-nonce markers |
 | delegation | One-hop issuer-mediated delegated credentials and live parent validation |
 | proxy | HTTP admission, policy, limited MCP inspection, forwarding and audit |
-| policy | YAML first-match rules, tool scope checks and regex redaction |
+| policy | YAML v2 longest segment-prefix rules, explicit methods, tool scope checks and regex redaction |
 | mcp | Initial JSON-RPC envelope inspection |
 
 ## Request lifecycle
@@ -30,7 +30,7 @@ Status: development preview, reviewed against 662eafd.
 3. For delegated credentials verify the original parent's current trust, revocation, registry and grant restrictions.
 4. Bound and read request body; verify holder signature over the passport digest, exact target, method, selected headers, body digest, time and nonce.
 5. Atomically consume the proof nonce in the dedicated local replay store.
-6. Evaluate HTTP or MCP policy; redact recognised patterns if enabled; populate verified identity headers and strip the passport and proof before forwarding.
+6. Evaluate HTTP policy or exact POST /mcp policy; redact recognised patterns if enabled; populate verified identity headers and strip the passport and proof before forwarding.
 
 JWKS is a public verification-key view, not a complete authorization decision. The verify CLI inspects credentials without proving a current request. The gateway authenticates the original request before rewriting/redaction; this is not end-to-end message integrity.
 

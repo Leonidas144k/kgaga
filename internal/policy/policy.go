@@ -2,6 +2,7 @@ package policy
 
 import (
 	"os"
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -12,6 +13,7 @@ import (
 type Rule struct {
 	PathPrefix    string   `yaml:"path_prefix"`
 	AllowedScopes []string `yaml:"allowed_scopes"`
+	AllowedMethods []string `yaml:"allowed_methods"`
 	DenyMethods   []string `yaml:"deny_methods"`
 }
 
@@ -27,7 +29,7 @@ type Config struct {
 	Rules         []Rule    `yaml:"rules"`
 }
 
-const DefaultConfigYAML = `version: "1"
+const DefaultConfigYAML = `version: "2"
 redact_secrets: true
 
 mcp:
@@ -37,9 +39,11 @@ mcp:
 rules:
   - path_prefix: "/api/db"
     allowed_scopes: ["db:read", "admin"]
+    allowed_methods: ["GET", "HEAD"]
     deny_methods: ["DELETE"]
   - path_prefix: "/api/payments"
     allowed_scopes: ["payments:write", "admin"]
+    allowed_methods: ["POST"]
     deny_methods: []
 `
 
@@ -52,24 +56,59 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
+	if cfg.Version != "2" { return nil, fmt.Errorf("policy version %q unsupported: migrate to version 2 with explicit allowed_methods",cfg.Version) }
 	return &cfg, nil
 }
 
-func (c *Config) Authorize(method, path string, agentScopes []string) (bool, string) {
-	for _, r := range c.Rules {
-		if strings.HasPrefix(path, r.PathPrefix) {
-			if slices.Contains(r.DenyMethods, strings.ToUpper(method)) {
-				return false, "HTTP method explicitly denied by Kgaga policy"
-			}
-			for _, needed := range r.AllowedScopes {
-				if slices.Contains(agentScopes, needed) {
-					return true, "authorized"
-				}
-			}
-			return false, "agent passport lacks required scope for " + r.PathPrefix
+// CanonicalPath accepts only literal ASCII unreserved path segments.
+// No encoded paths, dot segments, matrix parameters, duplicate slashes or
+// trailing slash aliases. This deliberately restricts the preview's routes.
+func CanonicalPath(path string) bool {
+	if path=="/" { return true }
+	if len(path)==0 || len(path)>8192 || path[0]!='/' || strings.HasSuffix(path,"/") { return false }
+	for _,segment:=range strings.Split(path[1:],"/") {
+		if segment=="" || segment=="." || segment==".." { return false }
+		for _,c:=range []byte(segment) {
+			if !(c>='a' && c<='z' || c>='A' && c<='Z' || c>='0' && c<='9' || c=='-' || c=='_' || c=='.' || c=='~') { return false }
 		}
 	}
-	return false, "no matching Kgaga policy rule (default deny)"
+	return true
+}
+
+// StandardMethod excludes tunneling, tracing, custom methods and lowercase
+// aliases. HEAD and OPTIONS need their own explicit grants.
+func StandardMethod(method string) bool {
+	switch method {
+	case "GET","HEAD","POST","PUT","PATCH","DELETE","OPTIONS":
+		return true
+	}
+	return false
+}
+
+func matches(prefix,path string) bool {
+	return prefix=="/" || path==prefix || strings.HasPrefix(path,prefix+"/")
+}
+
+// Authorize uses the longest matching segment-boundary prefix. A denial
+// never falls back to a broader rule; duplicate winning prefixes deny.
+func (c *Config) Authorize(method,path string,agentScopes []string) (bool,string) {
+	if c==nil || !CanonicalPath(path) || !StandardMethod(method) { return false,"invalid HTTP route or method" }
+	var best *Rule
+	tie:=false
+	for i:=range c.Rules {
+		r:=&c.Rules[i]
+		if !CanonicalPath(r.PathPrefix) { return false,"invalid policy path" }
+		if !matches(r.PathPrefix,path) { continue }
+		if best==nil || len(r.PathPrefix)>len(best.PathPrefix) { best=r; tie=false
+		} else if len(r.PathPrefix)==len(best.PathPrefix) { tie=true }
+	}
+	if best==nil { return false,"no matching Kgaga policy rule (default deny)" }
+	if tie { return false,"ambiguous policy rule" }
+	if slices.Contains(best.DenyMethods,method) || !slices.Contains(best.AllowedMethods,method) { return false,"HTTP method not allowed by policy" }
+	for _,needed:=range best.AllowedScopes {
+		if needed!="" && slices.Contains(agentScopes,needed) { return true,"authorized" }
+	}
+	return false,"agent passport lacks required scope"
 }
 
 func (c *Config) AuthorizeMCP(method, toolName, requiredScope string, agentScopes []string) (bool, string) {

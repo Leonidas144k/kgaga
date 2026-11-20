@@ -56,3 +56,7 @@ One-hop issuer-mediated delegation with explicit parent scope, signed parent gra
 ## Release review
 
 See [release checklist](RELEASE_CHECKLIST.md), [threat model](THREAT_MODEL.md) and [architecture](ARCHITECTURE.md). Do not confuse completion of initial identity implementation with readiness to operate a security boundary. Prioritize safe request forwarding and policy semantics before an external pilot.
+
+### Gateway increment 1
+
+HTTP policy v2: explicit method allowlists, segment-boundary longest-prefix authorization, no broader fallback, ambiguous winning rules deny, literal canonical paths, root-only upstream origin, exact POST /mcp classification, common routing override rejection and regression tests. Version 1 policy files must be migrated intentionally. Full YAML validation, strict MCP parsing, complete forwarding integrity and independent security review remain pending. Validation pending.

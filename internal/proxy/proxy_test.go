@@ -39,7 +39,7 @@ func TestGatewaySecurity(t *testing.T) {
 	defer up.Close()
 	cfg := &policy.Config{
 		MCP: policy.MCPPolicy{AllowedTools: []string{"search"}, DeniedTools: []string{"drop_table"}},
-		Rules: []policy.Rule{{PathPrefix: "/api/db", AllowedScopes: []string{"db:read"}, DenyMethods: []string{"DELETE"}}},
+		Rules: []policy.Rule{{PathPrefix: "/api/db", AllowedScopes: []string{"db:read"}, AllowedMethods: []string{"GET","HEAD"}, DenyMethods: []string{"DELETE"}}},
 	}
 	h, err := NewHandler(up.URL, key, cfg)
 	if err != nil { t.Fatal(err) }

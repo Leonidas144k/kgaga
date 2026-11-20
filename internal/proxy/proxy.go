@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Leonidas144k/kgaga/internal/mcp"
@@ -68,6 +69,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 	if (target.Scheme != "http" && target.Scheme != "https") || target.Hostname() == "" || target.User != nil || target.Fragment != "" {
 		return nil, errors.New("upstream must be an HTTP(S) URL with a host and no userinfo or fragment")
 	}
+	if (target.Path!="" && target.Path!="/") || target.RawPath!="" || target.RawQuery!="" || target.ForceQuery || target.Opaque!="" { return nil,errors.New("upstream must be an origin URL without a base path or query") }
 	if cfg == nil {
 		return nil, errors.New("policy configuration is required")
 	}
@@ -95,9 +97,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			pr.Out.Header.Del(passport.ProofHeader)
 		},
 	}
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/.well-known/jwks.json", func(w http.ResponseWriter, r *http.Request) {
+	serveJWKS := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		current:=jwks
 		if audience!="" {
@@ -107,9 +107,9 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		}
 		w.Header().Set("Cache-Control","no-store")
 		json.NewEncoder(w).Encode(current)
-	})
+	}
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	serveProtected := func(w http.ResponseWriter, r *http.Request) {
 		tokens := r.Header.Values("X-Agent-Passport")
 		if len(tokens) > 1 {
 			http.Error(w, "ambiguous agent passport", http.StatusBadRequest)
@@ -220,7 +220,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			}
 		}
 
-		isMCP := r.URL.Path == "/mcp" || r.Header.Get("MCP-Protocol-Version") != "" || r.Header.Get("Mcp-Method") != ""
+		isMCP := r.URL.Path == "/mcp"
 
 		if isMCP {
 			mcpInfo, err := mcp.Inspect(r, bodyBytes)
@@ -274,7 +274,40 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		})
 
 		rp.ServeHTTP(w, r)
-	})
+	}
 
-	return mux, nil
+	// Do not use ServeMux here: its path-cleaning redirects can precede
+	// authentication and differ from the resource actually authorized.
+	return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request) {
+		if err:=validateRoute(r); err!=nil { http.Error(w,"invalid or unsupported HTTP route",http.StatusBadRequest); return }
+		if r.URL.Path=="/.well-known/jwks.json" {
+			if r.Method!="GET" { w.Header().Set("Allow","GET"); http.Error(w,"method not allowed",405); return }
+			serveJWKS(w,r); return
+		}
+		serveProtected(w,r)
+	}), nil
+}
+
+ // validateRoute rejects alternate path interpretations and user-controlled
+ // HTTP/MCP mode switching before admission. Upstream must use the same
+ // case-sensitive literal path semantics and ignore alternate routing inputs.
+func validateRoute(r *http.Request) error {
+	bad:=errors.New("invalid HTTP route")
+	if r.URL==nil || !policy.StandardMethod(r.Method) || !policy.CanonicalPath(r.URL.Path) || r.URL.IsAbs() || r.URL.Host!="" || r.URL.Opaque!="" || r.URL.Fragment!="" || r.URL.RawPath!="" { return bad }
+	raw,_,_:=strings.Cut(r.RequestURI,"?")
+	if raw!=r.URL.Path || r.RequestURI!=r.URL.RequestURI() { return bad }
+	if _,err:=url.ParseQuery(r.URL.RawQuery); err!=nil { return bad }
+	for _,name:=range []string{"X-HTTP-Method-Override","X-HTTP-Method","X-Method-Override","X-Original-URL","X-Rewrite-URL","X-Original-URI","X-Forwarded-Uri","Upgrade"} {
+		if len(r.Header.Values(name))>0 { return bad }
+	}
+	// Header presence does not select the MCP authorization path.
+	if r.URL.Path=="/mcp" {
+		if r.Method!="POST" { return bad }
+	} else {
+		if strings.HasPrefix(r.URL.Path,"/mcp/") { return bad }
+		for _,name:=range []string{"MCP-Protocol-Version","Mcp-Method","Mcp-Name","Mcp-Session-Id"} {
+			for _,value:=range r.Header.Values(name) { if value!="" { return bad } }
+		}
+	}
+	return nil
 }
