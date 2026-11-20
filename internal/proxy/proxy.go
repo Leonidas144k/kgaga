@@ -1,15 +1,15 @@
 package proxy
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
+	"strings"
+	"strconv"
 	"time"
 
 	"github.com/Leonidas144k/kgaga/internal/mcp"
@@ -43,12 +43,12 @@ func emitAudit(ev AuditEvent) {
 const maxRequestBytes = 1 << 20
 
 // NewHandler retains the legacy verifier for explicit internal compatibility.
-func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) (http.Handler, error) {
-	return newHandler(targetURL, pubKey, cfg, "", nil, nil, nil, nil)
+func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, options ...UpstreamTLSOptions) (http.Handler, error) {
+	return newHandler(targetURL, pubKey, cfg, "", nil, nil, nil, nil, options...)
 }
 
 // NewHandlerForAudience enforces v2 passports without a legacy fallback.
-func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, replay *revocation.Store) (http.Handler, error) {
+func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, replay *revocation.Store, options ...UpstreamTLSOptions) (http.Handler, error) {
 	if err := passport.ValidateAudience(audience); err != nil {
 		return nil, err
 	}
@@ -56,10 +56,11 @@ func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.C
 	if err:=reg.Ready(); err!=nil { return nil,err }
 	if err:=trust.Ready(); err!=nil { return nil,err }
 	if err:=replay.Ready(); err!=nil { return nil,err }
-	return newHandler(targetURL, nil, cfg, audience, store, reg, trust, replay)
+	if store.SameDirectory(replay) { return nil,errors.New("replay and revocation stores must be separate") }
+	return newHandler(targetURL, nil, cfg, audience, store, reg, trust, replay,options...)
 }
 
-func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, trust *keyring.Store, replay *revocation.Store) (http.Handler, error) {
+func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, trust *keyring.Store, replay *revocation.Store, options ...UpstreamTLSOptions) (http.Handler, error) {
 	target, err := url.Parse(targetURL)
 	if err != nil {
 		return nil, err
@@ -68,9 +69,11 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 	if (target.Scheme != "http" && target.Scheme != "https") || target.Hostname() == "" || target.User != nil || target.Fragment != "" {
 		return nil, errors.New("upstream must be an HTTP(S) URL with a host and no userinfo or fragment")
 	}
-	if cfg == nil {
-		return nil, errors.New("policy configuration is required")
-	}
+	if (target.Path!="" && target.Path!="/") || target.RawPath!="" || target.RawQuery!="" || target.ForceQuery || target.Opaque!="" { return nil,errors.New("upstream must be an origin URL without a base path or query") }
+	tlsConfig,err:=upstreamTLS(target,options...)
+	if err!=nil { return nil,err }
+	cfg,err=cfg.Snapshot()
+	if err!=nil { return nil,err }
 	// Copy the supplied key so later caller mutations cannot desynchronise JWKS.
 	pubKey = append(ed25519.PublicKey(nil), pubKey...)
 	var jwks *passport.JWKS
@@ -81,23 +84,11 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 	}
 	if err != nil { return nil,err }
 
-	rp := &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(target)
-			pr.SetXForwarded()
-			// These values have already been overwritten with verified claims.
-			// Add them after hop-by-hop header stripping.
-			for _, name := range []string{"X-Pangolin-Verified-Agent", "X-Pangolin-Agent-Owner", "X-Kgaga-Verified-Agent", "X-Kgaga-Agent-Owner"} {
-				pr.Out.Header.Set(name, pr.In.Header.Get(name))
-			}
-			pr.Out.Header.Del("X-Agent-Passport")
-			pr.Out.Header.Del("X-Kgaga-Passport")
-			pr.Out.Header.Del(passport.ProofHeader)
-		},
-	}
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/.well-known/jwks.json", func(w http.ResponseWriter, r *http.Request) {
+	limiter,err:=policy.NewRateLimiter(*cfg.RateLimit)
+	if err!=nil { return nil,err }
+	transport:=newUpstreamTransport()
+	transport.TLSClientConfig=tlsConfig
+	serveJWKS := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		current:=jwks
 		if audience!="" {
@@ -107,9 +98,9 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		}
 		w.Header().Set("Cache-Control","no-store")
 		json.NewEncoder(w).Encode(current)
-	})
+	}
 
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	serveProtected := func(w http.ResponseWriter, r *http.Request) {
 		tokens := r.Header.Values("X-Agent-Passport")
 		if len(tokens) > 1 {
 			http.Error(w, "ambiguous agent passport", http.StatusBadRequest)
@@ -196,6 +187,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			}
 		}
 
+		var binding passport.RequestBinding
 		if audience!="" {
 			// Reject ambiguous bound headers, content encodings and request-target
 			// normalization before validating the exact received body.
@@ -205,11 +197,20 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			if r.Header.Get("Content-Encoding")!="" || r.RequestURI!=r.URL.RequestURI() || len(r.Trailer)>0 {
 				http.Error(w,"unsupported request encoding or target",400); return
 			}
-			binding:=passport.RequestBinding{Method:r.Method,Target:r.URL.RequestURI(),ContentType:r.Header.Get("Content-Type"),MCPVersion:r.Header.Get("MCP-Protocol-Version"),MCPMethod:r.Header.Get("Mcp-Method"),MCPSession:r.Header.Get("Mcp-Session-Id"),Body:bodyBytes}
+			binding=passport.RequestBinding{Method:r.Method,Target:r.URL.RequestURI(),ContentType:r.Header.Get("Content-Type"),MCPVersion:r.Header.Get("MCP-Protocol-Version"),MCPMethod:r.Header.Get("Mcp-Method"),MCPSession:r.Header.Get("Mcp-Session-Id"),Body:bodyBytes}
 			nonce,err:=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now())
 			if err!=nil {
 				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"BLOCK",Reason:"request proof rejected"})
 				http.Error(w,"request proof rejected",403); return
+			}
+			if retry,err:=limiter.Allow(claims.AgentID); err!=nil {
+				status:=http.StatusTooManyRequests
+				if errors.Is(err,policy.ErrRateCapacity) { status=http.StatusServiceUnavailable }
+				w.Header().Set("Retry-After",strconv.Itoa(retry))
+				w.Header().Set("Cache-Control","no-store")
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:err.Error()})
+				if r.URL.Path=="/mcp" { writeMCPError(w,status,-32603,"agent admission rate limited") } else { http.Error(w,"agent admission rate limited",status) }
+				return
 			}
 			if err:=replay.Consume(nonce); err!=nil {
 				status:=503
@@ -220,16 +221,17 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			}
 		}
 
-		isMCP := r.URL.Path == "/mcp" || r.Header.Get("MCP-Protocol-Version") != "" || r.Header.Get("Mcp-Method") != ""
+		isMCP := r.URL.Path == "/mcp"
+		var mcpInfo *mcp.InspectionResult
 
 		if isMCP {
-			mcpInfo, err := mcp.Inspect(r, bodyBytes)
+			mcpInfo, err = mcp.Inspect(r, bodyBytes)
 			if err != nil {
 				emitAudit(AuditEvent{
 					AgentID: claims.AgentID, Owner: claims.Owner, Method: r.Method,
 					Path: r.URL.Path, Decision: "BLOCK", Reason: err.Error(), Scopes: claims.Scopes,
 				})
-				http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32600,"message":"`+err.Error()+`"}}`, http.StatusBadRequest)
+				writeMCPError(w,http.StatusBadRequest,-32600,"invalid MCP request")
 				return
 			}
 
@@ -239,7 +241,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 					AgentID: claims.AgentID, Owner: claims.Owner, Method: mcpInfo.Method + ":" + mcpInfo.ToolName,
 					Path: r.URL.Path, Decision: "BLOCK", Reason: reason, Scopes: claims.Scopes,
 				})
-				http.Error(w, `{"jsonrpc":"2.0","error":{"code":-32603,"message":"Kgaga MCP block: `+reason+`"}}`, http.StatusForbidden)
+				writeMCPError(w,http.StatusForbidden,-32603,"MCP request denied")
 				return
 			}
 		} else {
@@ -254,27 +256,83 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			}
 		}
 
-		redacted := false
-		if cfg.RedactSecrets && len(bodyBytes) > 0 {
-			cleaned, didRedact := policy.Redact(string(bodyBytes))
-			redacted = didRedact
-			bodyBytes = []byte(cleaned)
+		if err:=inspectRequest(r,bodyBytes,cfg.RedactSecrets); err!=nil {
+			status:=http.StatusBadRequest
+			if errors.Is(err,errSecret) { status=http.StatusForbidden }
+			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"request inspection rejected"})
+			if isMCP { writeMCPError(w,status,-32600,"MCP payload rejected by inspection") } else { http.Error(w,"request inspection rejected",status) }
+			return
 		}
-		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-		r.ContentLength = int64(len(bodyBytes))
+		if audience!="" {
+			e:=checkLive(rawToken,audience,trust,reg,store)
+			if e==nil { _,e=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now()) }
+			if e!=nil {
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"final admission check failed"})
+				if isMCP { writeMCPError(w,403,-32603,"final admission denied") } else { http.Error(w,"final admission denied",403) }
+				return
+			}
+		}
+		response,err:=exchange(r,target,transport,claims,bodyBytes,mcpInfo,cfg.RedactSecrets)
+		if err!=nil {
+			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"upstream response rejected or unavailable"})
+			if isMCP { writeMCPError(w,http.StatusBadGateway,-32603,"upstream response rejected") } else { http.Error(w,"upstream response rejected",http.StatusBadGateway) }
+			return
+		}
+		// Requests already dispatched cannot be undone. Do not release
+		// their response after credential lifecycle validation fails.
+		if audience!="" {
+			if e:=checkLive(rawToken,audience,trust,reg,store); e!=nil {
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"credential lifecycle check failed before response"})
+				if isMCP { writeMCPError(w,403,-32603,"response access denied") } else { http.Error(w,"response access denied",403) }
+				return
+			}
+		}
+		emitAudit(AuditEvent{AgentID:claims.AgentID,Owner:claims.Owner,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"ALLOW",Scopes:claims.Scopes})
+		for key,values:=range response.headers { for _,value:=range values { w.Header().Add(key,value) } }
+		w.WriteHeader(response.status)
+		if r.Method!="HEAD" && response.status!=204 && response.status!=205 { _,_=w.Write(response.body) }
 
-		r.Header.Set("X-Pangolin-Verified-Agent", claims.AgentID)
-		r.Header.Set("X-Pangolin-Agent-Owner", claims.Owner)
-		r.Header.Set("X-Kgaga-Verified-Agent", claims.AgentID)
-		r.Header.Set("X-Kgaga-Agent-Owner", claims.Owner)
+	}
 
-		emitAudit(AuditEvent{
-			AgentID: claims.AgentID, Owner: claims.Owner, Method: r.Method,
-			Path: r.URL.Path, Decision: "ALLOW", PassportID: claims.ID, Redacted: redacted, Scopes: claims.Scopes,
-		})
+	// Do not use ServeMux here: its path-cleaning redirects can precede
+	// authentication and differ from the resource actually authorized.
+	return boundAdmission(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request) {
+		if err:=validateRoute(r); err!=nil { http.Error(w,"invalid or unsupported HTTP route",http.StatusBadRequest); return }
+		if r.URL.Path=="/.well-known/jwks.json" {
+			if r.Method!="GET" { w.Header().Set("Allow","GET"); http.Error(w,"method not allowed",405); return }
+			serveJWKS(w,r); return
+		}
+		serveProtected(w,r)
+	}),MaxActiveRequests,6000,128)
+}
 
-		rp.ServeHTTP(w, r)
-	})
+ // validateRoute rejects alternate path interpretations and user-controlled
+ // HTTP/MCP mode switching before admission. Upstream must use the same
+ // case-sensitive literal path semantics and ignore alternate routing inputs.
+func validateRoute(r *http.Request) error {
+	bad:=errors.New("invalid HTTP route")
+	if r.URL==nil || !policy.StandardMethod(r.Method) || !policy.CanonicalPath(r.URL.Path) || r.URL.IsAbs() || r.URL.Host!="" || r.URL.Opaque!="" || r.URL.Fragment!="" || r.URL.RawPath!="" { return bad }
+	raw,_,_:=strings.Cut(r.RequestURI,"?")
+	if raw!=r.URL.Path || r.RequestURI!=r.URL.RequestURI() { return bad }
+	if _,err:=url.ParseQuery(r.URL.RawQuery); err!=nil { return bad }
+	for _,name:=range []string{"X-HTTP-Method-Override","X-HTTP-Method","X-Method-Override","X-Original-URL","X-Rewrite-URL","X-Original-URI","X-Forwarded-Uri","Upgrade"} {
+		if len(r.Header.Values(name))>0 { return bad }
+	}
+	// Header presence does not select the MCP authorization path.
+	if r.URL.Path=="/mcp" {
+		if r.Method!="POST" { return bad }
+	} else {
+		if strings.HasPrefix(r.URL.Path,"/mcp/") { return bad }
+		for _,name:=range []string{"MCP-Protocol-Version","Mcp-Method","Mcp-Name","Mcp-Session-Id"} {
+			for _,value:=range r.Header.Values(name) { if value!="" { return bad } }
+		}
+	}
+	return nil
+}
 
-	return mux, nil
+// Reject messages without reflecting attacker-controlled fields or IDs.
+func writeMCPError(w http.ResponseWriter,status,code int,message string) {
+	w.Header().Set("Content-Type","application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]any{"jsonrpc":"2.0","id":nil,"error":map[string]any{"code":code,"message":message}})
 }

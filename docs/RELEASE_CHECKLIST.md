@@ -9,10 +9,10 @@ At commit 662eafd: local go vet, race tests, binary build and full CLI lifecycle
 - [x] Initial identity implementation and local CLI lifecycle validation at baseline.
 - [x] Baseline CI passed.
 - [x] Document architecture, limitations and initial threat model.
-- [ ] Validate new release-review commit, including delegated HTTP gateway integration tests.
+- [x] Identity release-review commit d7674bb validated locally and in CI, including delegated gateway integration tests.
 - [ ] Review source and remaining defects; explicitly approve preview scope.
 - [ ] Confirm repository ownership/licensing and private reporting channel before external distribution.
-- [ ] Merge reviewed PR into main after green CI.
+- [x] Identity PR #2 merged into main at 24097e8.
 - [ ] Verify release build artifacts, checksums, supported platforms and migration instructions before publishing a preview tag.
 
 ## Production gates — not met
@@ -25,3 +25,15 @@ At commit 662eafd: local go vet, race tests, binary build and full CLI lifecycle
 - [ ] Multi-node consistency if distributed operation is offered.
 
 The preview is for isolated development with synthetic data. A green CI pipeline is not a security audit. Do not publish a production release, or advertise a certified security boundary, on this evidence.
+
+## Gateway v0.4.0 development-preview review
+
+- [x] Increments 1–8 locally and CI validated through 5784d51, including replay contention correction.
+- [x] Increment 9 at 8bbfe0f: local module integrity, vet, ten repeated replay tests, full race suite, 21,532 local parser fuzz executions (27 new interesting inputs), binary build, CLI lifecycle and policy check passed. GitHub CI run 44711337360 succeeded.
+- [x] Reconcile architecture and threat-model documentation with implemented controls; record validation evidence.
+- [ ] Validate release-review documentation commit in CI; approve internal preview scope.
+- [ ] Run current dependency/toolchain vulnerability scan and review remaining findings. go mod verify checks integrity, not known vulnerabilities.
+- [ ] Review and merge gateway PR; confirm main CI.
+- [ ] Review distribution license and private vulnerability reporting before publishing artifacts or a preview tag.
+
+Outstanding: independent protocol/cryptography review, sustained load tests, operational key custody, replay storage recovery and pruning, complete MCP compatibility, OS isolation, tamper-evident audit, multi-node consistency and certificate lifecycle. Final admission checks narrow but do not eliminate the revocation/dispatch race. No production assurance is claimed.

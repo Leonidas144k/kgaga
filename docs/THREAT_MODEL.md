@@ -1,6 +1,6 @@
-# Threat model — initial identity development preview
+# Threat model — identity and gateway development preview
 
-Scope: source review of 662eafd, not an independent penetration test or certification. Threats include malicious agents, compromised holder keys, network attackers, hostile upstream/MCP servers, privileged operator error and state loss.
+Scope: internal implementation review through gateway baseline 8bbfe0f, not an independent penetration test or certification. Threats include malicious agents, compromised holder keys, network attackers, hostile upstream/MCP servers, privileged operator error and state loss.
 
 ## Assets and assumptions
 
@@ -10,24 +10,28 @@ Protect issuer and holder keys, enrolled identities and permissions, credential 
 
 | Threat | Current control | Residual risk / required work |
 | --- | --- | --- |
-| Forged, expired or wrong-audience passport | Ed25519, strict claims, trusted kid, exact audience | Independent JWT/parser review; issuer compromise |
+| Forged, expired or wrong-audience passport | Ed25519, exact wire schema, strict claims, trusted kid, exact audience | Independent JWT/parser review; issuer compromise |
 | Stolen passport | Registered holder thumbprint and signed HTTP request | Full captured proof can race original; compromised key impersonates holder |
-| Replayed proof | Freshness checks and exclusive nonce marker | Unbounded markers, disk exhaustion, clock rollback, multiple hosts, state rollback |
+| Replayed proof | Freshness checks, exclusive nonce marker and persistent reservation ceiling | Storage saturation, stale lock recovery, clock rollback, multiple hosts, state rollback |
 | Unauthorized registration | Operator approval and new CLI challenge proof | No independent identity/workload attestation; older registrations not retroactively checked |
-| Excess delegation | Same owner and audience, subset, expiry bound, parent checks | Grant reuse, no independent grant revocation; test gateway lifecycle |
+| Excess delegation | Same owner and audience, subset, expiry bound, parent checks | Grant reuse, no independent grant revocation; non-atomic dispatch/revocation |
 | Compromised issuer | Explicit trust and permanent retirement | Manual rotation; state trust and in-flight requests; no HSM |
 | State loss or replacement | Running process checks directory identity; deny on errors | Restart cannot establish trusted history; backups and rollback protection required |
-| Policy boundary ambiguity | First matching path prefix / scope and tool checks | Segment boundaries, method semantics, overlapping rules and policy schema need hardening |
-| Protocol confusion | Initial JSON-RPC and header/body checks | Parser ambiguity, route classification and unsupported transports need strict handling |
-| Request transformation | Signed selected inbound fields | Unbound forwarding headers and hop-by-hop behavior; verify downstream semantics |
-| Untrusted upstream | Configured HTTP(S) target | No comprehensive response bounds, streaming deadlines, isolation or authenticated channel enforcement |
-| Unauthenticated stdio | Experimental denylist/redaction | Not an identity boundary; disable for security-sensitive use |
-| Data exfiltration | Limited regex redaction | Not comprehensive DLP; encoding, tool output, headers and semantic leakage remain |
+| Policy boundary ambiguity | Exact methods, canonical paths, longest segment prefix, strict config, scope and tool checks | Upstream routing semantics and authorization must match; independent bypass review |
+| Protocol confusion | Restricted JSON-RPC parser, duplicate rejection, exact route and response IDs | Full MCP schemas, sessions, streaming and compatibility remain incomplete |
+| Request transformation | Signed selected inbound fields and explicit forwarding allowlist | Not end-to-end integrity; backend interpretation and retry semantics require review |
+| Untrusted upstream | Verified HTTPS, optional client TLS credentials, buffered response bounds and deadlines | Backend isolation, mTLS enforcement/authorization, certificate lifecycle and independent review |
+| Stdio impersonation | Signed frames, live credential checks, scope policy, replay markers | Custom lockstep transport, no sandbox or full-duplex MCP; direct child inherits operator privileges |
+| Data exfiltration | Block recognized patterns in raw/decoded JSON and selected metadata | Not comprehensive DLP; arbitrary encodings, split strings, semantic leakage and logs remain |
 | Audit manipulation | JSON decision logs | Not immutable; incomplete coverage and potentially sensitive fields |
-| Resource exhaustion | Request body, header and read limits | Rate limits, bounded state, response limits and denial-of-service testing needed |
+| Resource exhaustion | Connection, handler, aggregate and per-agent rate limits, bounded I/O and replay capacity | Sustained load, storage recovery, distributed admission and perimeter DoS defenses remain |
 
 ## Release blockers for production
 
-Harden route and method policy semantics and validate policy configuration; reject ambiguous protocol inputs and transformations; enforce safe authenticated transports and isolate upstream; establish resource bounds, durable state/backup and recovery; protect logs and secrets; complete independent security review. The production release must have explicit acceptance criteria and evidence for each. The identity preview does not close these blockers.
+Independently review authorization and parser compatibility; establish operational PKI and upstream isolation; measure resource limits under sustained load; establish durable state/backup, replay recovery and safe pruning; protect keys, logs and secrets; complete dependency and independent security review. Internal regression coverage does not close these production gates.
 
 No claims of protection against arbitrary prompt injection, malicious models, compromised hosts, hardware attacks or distributed replay are made.
+
+## Gateway transport update (increment 8)
+
+Upstream TLS verifies the configured hostname/IP and certificate chain; optional client certificates enable mTLS when the server requires and authorizes them. Cleartext upstream is restricted to explicit literal loopback. External listeners require TLS. PKI compromise, certificate revocation/rotation, direct backend access, network isolation and deployment assurance remain residual risks. Local/CI validation passed at 5784d51 and final gateway baseline 8bbfe0f.

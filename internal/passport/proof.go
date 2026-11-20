@@ -69,7 +69,7 @@ func VerifyRequest(proof,token string,key ed25519.PublicKey,r RequestBinding,now
 	stamp,err:=strconv.ParseInt(p[1],10,64)
 	if err!=nil || strconv.FormatInt(stamp,10)!=p[1] || stamp<now.Unix()-30 || stamp>now.Unix()+5 { return "",invalid }
 	sig,err:=base64.RawURLEncoding.Strict().DecodeString(p[3])
-	if err!=nil || len(sig)!=ed25519.SignatureSize { return "",invalid }
+	if err!=nil || len(sig)!=ed25519.SignatureSize || base64.RawURLEncoding.EncodeToString(sig)!=p[3] { return "",invalid }
 	msg,err:=proofMessage(token,p[1],p[2],r)
 	if err!=nil || !ed25519.Verify(key,msg,sig) { return "",invalid }
 	return p[2],nil

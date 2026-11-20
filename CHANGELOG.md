@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — v0.4.0 gateway development
+
+- Adversarial regression coverage: reject ambiguous signed v2 envelopes, recheck live credentials and proof freshness before dispatch, repeat replay tests and fuzz the envelope parser in CI.
+
+- Require verified HTTPS upstream by default; private CA and client TLS credentials supported. Explicit literal-loopback HTTP opt-in; require TLS for non-loopback gateway binds.
+
+- Correct replay quota lock contention: bounded three-second acquisition, typed busy error and strengthened contention/duplicate tests; security ceilings and exclusive nonce writes unchanged.
+
+- Bound aggregate HTTP admission, active handlers, TCP/upstream connections and write time. Cap persistent replay reservations without pruning; reject shared replay/revocation directories. Offline recovery required after a crash lock.
+
+- Mandatory per-agent token buckets, optional validated rate_limit settings, HTTP 429/Retry-After, bounded tracking and stdio session admission. Counters are local and reset on restart.
+
+- Bounded buffered HTTP request/response inspection, restricted forwarding headers and content types, matched MCP response IDs, and bidirectional block-on-secret policy. Existing transparent proxy behavior is intentionally restricted.
+
+- Replace unsigned stdio wrapper with signed frames, live identity/scope checks, lockstep response validation and a frame-signing CLI. Native clients need an adapter; OS isolation remains required.
+
+- HTTP policy version 2 requires explicit allowed methods; most-specific segment prefix wins, no broader fallback.
+- Reject ambiguous/nonliteral paths, common routing overrides, upstream base paths/queries and header-selected MCP routing.
+- Existing v1 policies require intentional migration.
+- Strict YAML schema and semantic validation; standalone policy-check; immutable gateway policy snapshot and explicit empty MCP tool deny behavior.
+- Restricted HTTP MCP parser: reject duplicate/ambiguous JSON, unsupported methods, malformed requests and detected secret patterns; add signed gateway tests. Full protocol/session/response validation remains pending.
+
+
 ## Unreleased — v0.3.0 identity preview
 
 ### Added

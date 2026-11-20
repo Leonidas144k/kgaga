@@ -20,7 +20,11 @@ jobs:
           go-version-file: go.mod
       - run: go mod verify
       - run: go vet ./...
-      - run: go test -race ./...
+      - run: go test -race -count=1 ./...
+      - name: Repeat replay concurrency regression tests
+        run: go test -race -count=10 ./internal/revocation
+      - name: Fuzz passport envelope parser
+        run: go test ./internal/passport -run=^$ -fuzz=^FuzzPassportEnvelope$ -fuzztime=5s -parallel=2
       - run: go build -trimpath -o /tmp/kgaga ./cmd/kgaga
       - name: Verify CLI passport lifecycle
         run: bash scripts/test-passport-lifecycle.sh /tmp/kgaga

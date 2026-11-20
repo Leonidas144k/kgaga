@@ -34,14 +34,16 @@ func TestGatewaySecurity(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		forwarded.Add(1)
 		if r.Header.Get("X-Pangolin-Verified-Agent") != "test-agent" { t.Error("missing verified identity") }
+		if r.URL.Path=="/mcp" { w.Header().Set("Content-Type","application/json"); _,_=w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`)); return }
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer up.Close()
 	cfg := &policy.Config{
+		Version: "2",
 		MCP: policy.MCPPolicy{AllowedTools: []string{"search"}, DeniedTools: []string{"drop_table"}},
-		Rules: []policy.Rule{{PathPrefix: "/api/db", AllowedScopes: []string{"db:read"}, DenyMethods: []string{"DELETE"}}},
+		Rules: []policy.Rule{{PathPrefix: "/api/db", AllowedScopes: []string{"db:read"}, AllowedMethods: []string{"GET","HEAD"}, DenyMethods: []string{"DELETE"}}},
 	}
-	h, err := NewHandler(up.URL, key, cfg)
+	h, err := NewHandler(up.URL, key, cfg,UpstreamTLSOptions{AllowLoopbackHTTP:true})
 	if err != nil { t.Fatal(err) }
 	for _, tc := range []struct{name, method, path, token, body, mcpMethod string; want int}{
 		{"missing token", "GET", "/api/db", "", "", "", 401},
@@ -51,17 +53,18 @@ func TestGatewaySecurity(t *testing.T) {
 		{"denied method", "DELETE", "/api/db", valid, "", "", 403},
 		{"oversize", "POST", "/api/db", valid, strings.Repeat("x", maxRequestBytes+1), "", 413},
 		{"malformed MCP", "POST", "/mcp", valid, "{", "", 400},
-		{"MCP mismatch", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "tools/list", 400},
-		{"denied tool", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"drop_table\"}}", "", 403},
-		{"missing scope", "POST", "/mcp", mint([]string{"db:read"}, time.Minute), "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "", 403},
+		{"MCP mismatch", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "tools/list", 400},
+		{"denied tool", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"drop_table\"}}", "", 403},
+		{"missing scope", "POST", "/mcp", mint([]string{"db:read"}, time.Minute), "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "", 403},
 		{"valid HTTP", "GET", "/api/db", valid, "", "", 204},
-		{"valid MCP", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "", 204},
+		{"valid MCP", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "", 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			before := forwarded.Load()
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 			req.Header.Set("X-Agent-Passport", tc.token)
 			req.Header.Set("Mcp-Method", tc.mcpMethod)
+			if tc.path=="/mcp" { req.Header.Set("Content-Type","application/json") }
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, req)
 			if w.Code != tc.want { t.Fatalf("status %d, want %d: %s", w.Code, tc.want, w.Body.String()) }
@@ -81,8 +84,8 @@ func TestInvalidGatewayConfiguration(t *testing.T) {
 	key, _, err := ed25519.GenerateKey(nil)
 	if err != nil { t.Fatal(err) }
 	for _, target := range []string{"relative", "ftp://example.com", "http://user:pass@example.com", "http://"} {
-		if _, err := NewHandler(target, key, &policy.Config{}); err == nil { t.Fatalf("accepted %q", target) }
+		if _, err := NewHandler(target, key, &policy.Config{Version:"2"}); err == nil { t.Fatalf("accepted %q", target) }
 	}
-	if _, err := NewHandler("http://localhost", nil, &policy.Config{}); err == nil { t.Fatal("accepted invalid key") }
-	if _, err := NewHandler("http://localhost", key, nil); err == nil { t.Fatal("accepted nil policy") }
+	if _, err := NewHandler("http://127.0.0.1", nil, &policy.Config{Version:"2"},UpstreamTLSOptions{AllowLoopbackHTTP:true}); err == nil { t.Fatal("accepted invalid key") }
+	if _, err := NewHandler("http://127.0.0.1", key, nil,UpstreamTLSOptions{AllowLoopbackHTTP:true}); err == nil { t.Fatal("accepted nil policy") }
 }

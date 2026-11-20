@@ -1,5 +1,10 @@
-version: "1"
+version: "2"
 redact_secrets: true
+
+rate_limit:
+  requests_per_minute: 120
+  burst: 40
+  max_agents: 4096
 
 mcp:
   allowed_tools: ["search", "read_file", "postgres.query"]
@@ -8,7 +13,9 @@ mcp:
 rules:
   - path_prefix: "/api/db"
     allowed_scopes: ["db:read", "admin"]
+    allowed_methods: ["GET", "HEAD"]
     deny_methods: ["DELETE"]
   - path_prefix: "/api/payments"
     allowed_scopes: ["payments:write", "admin"]
+    allowed_methods: ["POST"]
     deny_methods: []

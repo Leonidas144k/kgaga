@@ -11,8 +11,8 @@ As companies deploy autonomous AI agents and Model Context Protocol (MCP) server
 Kgaga acts as a lightning-fast, single-binary Go gateway and CLI wrapper that addresses parts of this by introducing:
 1. **Cryptographic Agent Passports** (Ed25519-signed short-lived tokens bounding agent identity, owner, and scoped permissions).
 2. **MCP Desync & Protocol Confusion Protection** (Initial header-to-body JSON-RPC validation; full protocol hardening is pending).
-3. **Real-Time Secret Scrubbing** (Automatic regex redaction of AWS keys, GitHub PATs, OpenAI tokens, and bearer credentials).
-4. **Local Stdio Wrapping** (`kgaga wrap`) for experimental local execution in Claude Desktop, Cursor, or Claude Code.
+3. **Bidirectional Secret-Pattern Inspection** (Block recognized AWS, GitHub, OpenAI-style and bearer credential patterns; not comprehensive DLP).
+4. **Authenticated Stdio Wrapping** (`kgaga wrap`) for a restricted signed-frame development transport; a client adapter is required.
 
 ## Features
 - **Go Core:** Written in Go with single-binary distribution and zero runtime dependencies.
@@ -112,13 +112,82 @@ $TOKEN | kgaga verify --audience "support-api"
 
 Replace the example agent name, owner, and scopes with the values required for your agent.
 
+### HTTP policy v2 (gateway development branch)
+
+Existing policy files with version "1" will no longer load. Back up the policy outside source control, set `version: "2"`, and explicitly add `allowed_methods` to every HTTP rule. Review scopes rather than automatically granting old methods. The bundled defaults permit GET/HEAD for the database read rule and POST for the payments rule. The most specific segment-boundary prefix wins; a denial never falls back to a broader rule. Duplicate winning rules deny; method names are exact and `deny_methods` overrides the winning rule's allowlist. No allowlist means no access.
+
+Routes are restricted to literal ASCII unreserved path segments, without percent escapes, duplicate slashes, trailing slash aliases, dot segments or matrix parameters. Upstream targets must be origin URLs without a base path or query. MCP is selected by the exact /mcp route and POST only; nonempty MCP headers elsewhere and common alternate routing/method override headers are rejected. Use a case-sensitive upstream with matching path semantics; this is not full HTTP/MCP integrity or policy schema validation. Query/body-based method overrides and other upstream-specific routing conventions must be disabled by the operator.
+
+### Validate policy configuration
+
+```bash
+kgaga policy-check --config kgaga.yaml
+```
+
+The policy checker and gateway require one YAML document of at most 128 KiB, with explicit `version`, `redact_secrets`, `mcp` and `rules` fields. Both MCP lists and every rule's `path_prefix`, `allowed_scopes`, `allowed_methods` and `deny_methods` fields are required. Unknown or duplicate fields, aliases, anchors, merge keys, explicit tags, scalar coercion, invalid paths, duplicate routes and invalid/duplicate list items are rejected. HTTP rule method/scope lists must be nonempty; use `rules: []` to deny all HTTP routes. An empty MCP tool allowlist denies all tool calls, including admin scope; an explicit sole "*" entry permits any tool not denied, subject to passport scopes. Denials take precedence within the winning rule. Other MCP method authorization remains unchanged. The gateway validates and snapshots its configuration at startup; policy changes require restart. Select a policy file with `proxy --config <file>`.
+
+### Restricted MCP HTTP preview
+
+Only POST /mcp without query parameters and application/json (optional UTF-8 charset) is inspected. A single JSON-RPC 2.0 request is required. Supported methods: initialize, ping, tools/list, tools/call and notifications/initialized. All other methods and batches are rejected. Requests require a nonempty string ID or safe-range integer ID; notifications/initialized must omit it. Params, when present, must be an object. Tool calls require a literal ASCII tool name and object arguments/_meta when present. Passport scope checks and the tool allowlist still apply.
+
+The parser rejects duplicate keys (including case-folded aliases as detected by Go strings.ToLower), unexpected envelope fields, invalid UTF-8, replacement characters, trailing JSON, depth over 32 and excessive token count. Body size remains 1 MiB. Optional compatibility method/name headers must match the body; redundant Mcp-Name is removed before forwarding. Duplicate headers, encoded bodies, trailers and unsupported connection options are rejected. With redact_secrets enabled, MCP requests matching existing secret patterns are blocked rather than rewritten after authorization. This is intentionally restrictive, not full MCP conformance or comprehensive DLP; method-specific schemas, negotiation/state, streaming, server responses and stdio security remain incomplete.
+
+### Bounded request and response inspection
+
+The HTTP gateway is no longer a transparent reverse proxy. It forwards only selected content/MCP headers and trusted identity headers, with a fixed Accept value. Client authorization, cookies and arbitrary headers are not forwarded. Upstream response headers are restricted to content type and selected MCP metadata; redirects, partial responses, encodings, trailers and streaming are unsupported. Nonempty payloads must be UTF-8 application/json or text/plain. Bodies are capped at 1 MiB in each direction; upstream response headers are capped at 32 KiB, response header wait at 10 seconds and total exchange at 30 seconds. HTTP MCP responses require a JSON-RPC 2.0 result/error with matching ID and HTTP 200, or an empty 202/204 for the supported notification. The HTTP exchange is buffered and inspected before any upstream bytes are sent to the client. Current credential lifecycle is checked again before response release; already dispatched side effects cannot be undone.
+
+The existing `redact_secrets: true` setting now blocks recognized secret patterns in request and response payloads, JSON-decoded keys/strings, request query and selected metadata rather than rewriting signed data. The authenticated stdio transport uses the same payload scanner. Patterns are heuristic and do not recognize all credentials, arbitrary encodings, split strings, attachments or indirect leakage. Setting the flag false disables secret-pattern checks, not text/JSON validation or size bounds. This development-only restriction may break existing REST and MCP clients. Complete protocol schemas, response streaming and deployment-level transport assurance remain outstanding.
+
+### Agent rate limiting
+
+Both authenticated transports enforce an in-memory token bucket per registered agent ID. HTTP shares a bucket across all routes and passports for an agent within one gateway handler. Stdio uses a bucket for its pinned session. The optional policy block below is also the default when absent, so existing version 2 policies remain valid:
+
+```yaml
+rate_limit:
+  requests_per_minute: 120
+  burst: 40
+  max_agents: 4096
+```
+
+All three fields are required when the block is present; values must be decimal integers within 1..6000, 1..1000 and 1..16384 respectively. There is no off switch. After verifying the holder proof, charge one token before consuming the replay marker and before policy evaluation. Thus verified attempts that fail subsequent checks still cost a token. Unauthenticated attempts do not allocate agent buckets. HTTP rate denial returns 429 with Retry-After in seconds; when tracking capacity is exhausted, return 503 and Retry-After: 1. Stdio terminates the session on denial. Full buckets can be reclaimed when capacity is reached, but depleted buckets are never evicted to reset quotas. A replacement passport or issuer key does not reset a bucket.
+
+Limits are local to a handler/process and reset on restart. Stdio sessions and separate HTTP gateway instances do not share counters, and delegated children are charged by their own IDs, not a shared parent budget. Repeated captured valid proofs may consume quota before replay rejection; the nonce store does not grow on rate-limited attempts. This is not a durable billing quota or global DoS defense. Aggregate concurrency, pre-authentication admission control, and persistent replay storage limits remain future work.
+
+### Resource exhaustion controls
+
+The development gateway uses fixed process-local ceilings: 128 accepted TCP connections, 64 concurrent HTTP handlers, aggregate 6,000 requests/minute with a 128-request burst (including unauthenticated traffic and JWKS), and 32 upstream connections per host. Excess active requests return 503 with Retry-After; aggregate rate exhaustion returns 429. The CLI bounds accepted connections before HTTP parsing; excess connections wait in the OS backlog. Read-header, read, idle and write timeouts are 5, 30, 30 and 65 seconds respectively. Upstream deadlines and 1 MiB request/response bounds remain in force. Stdio retains one outstanding request per wrapper process; use OS process limits for multiple wrappers.
+
+The dedicated replay directory now has a fixed 1,000,000 reservation ceiling. Stop all older writers before upgrading. The first new consumption counts existing legacy nonce markers, then persists a reservation count before recording each new nonce. Cooperating updated processes share the count through a directory lock, with a bounded three-second lock contention budget for both same-process and cross-process callers. Busy lock acquisition returns an explicit retryable store-busy error before reservation; the HTTP gateway still returns 503. Filesystem operations themselves are not time-bounded by this lock budget. Failed writes may waste reservations; the ceiling never triggers automatic deletion. Quota exhaustion or store/lock errors fail closed (HTTP 503 or stdio termination). Revocations and nonce replay state must use different physical directories. Do not delete markers, reset the counter or remove a crash lock while any writers may be active. Offline recovery requires trusted state reconciliation and operator review; a stale lock deliberately blocks admissions. This is not guaranteed power-loss durability or protection against privileged tampering. Monitor filesystem usage and plan storage capacity; the quota bounds new markers by cooperating writers, not all disk use, audit logs, existing over-capacity state or arbitrary operator files.
+
+These ceilings protect a single process, not a distributed deployment or the network perimeter. No per-IP fairness, global process cap, automated safe replay pruning or production DDoS protection is claimed. Use external firewall, OS limits and monitoring for controlled tests.
+
+### Secure HTTP transport
+
+HTTPS is required for upstream connections by default. Kgaga verifies certificate chains and the hostname/IP in the configured origin, with TLS 1.2 minimum and no insecure verification option. System roots are used unless `--upstream-ca` specifies a private PEM CA bundle, which replaces rather than extends the system trust pool. Use `--upstream-client-cert` and `--upstream-client-key` together for client authentication. For mutual TLS, configure the upstream server to require and verify the gateway certificate and authorize that certificate's identity; setting a client certificate alone cannot prove the server enforces client authentication. Upstreams must reject direct agent access and spoofed identity headers. Keys and CA files are loaded once at startup; rotate by restarting. No automatic rotation or certificate revocation (CRL/OCSP) enforcement is provided.
+
+Plaintext upstreams require `--allow-loopback-http` and a literal loopback IP (127.0.0.1 or ::1), not a DNS name. Do not use this for real sensitive data. Non-loopback gateway listeners require both `--tls-cert` and `--tls-key`; literal loopback listeners may use plaintext for synthetic testing. Listener TLS authenticates the gateway to clients; inbound agent authentication remains passport/proof based. Network perimeter isolation, trusted PKI, certificate lifecycle and independent review remain necessary.
+
+```bash
+# Example only; supply actual provisioned certificate paths.
+kgaga proxy --listen 127.0.0.1:8443 --target https://backend.example:443 \
+  --audience support-api --upstream-ca /secure/ca.pem \
+  --upstream-client-cert /secure/client.pem --upstream-client-key /secure/client.key \
+  --tls-cert /secure/gateway.pem --tls-key /secure/gateway.key
+```
+
+### Adversarial regression coverage
+
+V2 passports now require the closed Kgaga-minted JSON schema: exact header and claim names, canonical base64url segments, string-list audience/scopes, integer time claims, and exact nested confirmation/delegation fields. Unknown or repeated fields, alternate spellings, trailing documents and noncanonical encodings are rejected even if correctly signed. The verifier still validates signatures and all semantic claims. Existing Kgaga-generated v2 passports remain in the supported format; externally constructed variants may require reissuance.
+
+The HTTP and stdio gateways recheck the live credential lifecycle and proof freshness immediately before dispatch, after potential I/O and replay-store delays. A consumed nonce is not refunded after rejection. Revocation and dispatch are not atomic; actions already dispatched cannot be undone. Regression tests cover simultaneous deliveries of one signed proof, revocation during body reading, withholding responses after revocation, and signed ambiguous credentials. CI repeats replay tests and runs a short parser fuzzing job. This is internal adversarial regression testing, not independent security certification or a penetration test.
+
 ### Start an audience-bound gateway (isolated test environment only)
 
 ```bash
-kgaga proxy --listen 127.0.0.1:8080 --target http://localhost:3000 --audience support-api
+kgaga proxy --listen 127.0.0.1:8080 --target http://127.0.0.1:3000 --allow-loopback-http --audience support-api
 ```
 
-Use a distinct service identifier per trust boundary, and use the same audience for issuance and gateway verification. Audiences are explicit identifiers, not inferred from untrusted HTTP headers. Passports use Ed25519, a key thumbprint, a random credential ID, and mandatory time claims; default TTL is 15 minutes, maximum 1 hour. Unique IDs are not replay protection. Single-host passport revocation is now enforced by the CLI and audience-bound gateway. Local operator-controlled key rotation is supported. Holder-bound HTTP request proofs and single-host replay protection are implemented; distributed revocation and authenticated stdio remain future work. The gateway strips the passport header before forwarding, and sets verified identity headers from signed claims; upstream services must only trust these headers on an authenticated, isolated gateway connection. Use only in controlled testing, not production.
+Use a distinct service identifier per trust boundary, and use the same audience for issuance and gateway verification. Audiences are explicit identifiers, not inferred from untrusted HTTP headers. Passports use Ed25519, a key thumbprint, a random credential ID, and mandatory time claims; default TTL is 15 minutes, maximum 1 hour. Unique IDs are not replay protection. Single-host passport revocation is now enforced by the CLI and audience-bound gateway. Local operator-controlled key rotation is supported. Holder-bound HTTP request proofs and single-host replay protection are implemented; authenticated stdio is available in restricted lockstep mode; distributed revocation remains future work. The gateway strips the passport header before forwarding, and sets verified identity headers from signed claims; upstream services must only trust these headers on an authenticated, isolated gateway connection. Use only in controlled testing, not production.
 
 ### Revoke a passport
 
@@ -155,7 +224,7 @@ kgaga mint --signing-key /secure/new-key-directory/kgaga.key --agent support-bot
 kgaga key-retire --kid OLD_KID
 ```
 
-Replace placeholders with actual paths and the old key's thumbprint. Keep all private keys outside version control. JWKS is read from live trusted records and excludes retired keys; downstream caches and already admitted requests are outside this guarantee. Retirement is permanent through the CLI; no automatic active-key selection, distributed synchronization, HSM, tamper-proof store or verified power-loss durability is provided. This requires a local filesystem with hard-link support and trusted operator control over state and its parent directory. Do not delete retirement markers or restore stale state. The legacy experimental stdio wrapper is unaffected and does not provide this authentication.
+Replace placeholders with actual paths and the old key's thumbprint. Keep all private keys outside version control. JWKS is read from live trusted records and excludes retired keys; downstream caches and already admitted requests are outside this guarantee. Retirement is permanent through the CLI; no automatic active-key selection, distributed synchronization, HSM, tamper-proof store or verified power-loss durability is provided. This requires a local filesystem with hard-link support and trusted operator control over state and its parent directory. Do not delete retirement markers or restore stale state. The old unauthenticated stdio wrapper has been removed.
 
 ### Holder-bound requests (development protocol)
 
@@ -182,9 +251,24 @@ An enrolled parent with a passport carrying `kgaga:delegate` can sign a grant fo
 
 Delegated credentials use the distinct JWT type `kgaga-delegated+jwt`. They embed the original signed parent passport and grant signature to allow live revalidation of parent trust, revocation, registered holder, permissions and grant constraints in the CLI and HTTP gateway. Older builds reject this type. A parent passport is credential material; protect the child passport accordingly. Revoking or suspending the parent or retiring its signing key blocks subsequent delegated requests. Grants may be reused by the trusted issuer until expiry (revoking one child passport does not revoke the grant; revoke the parent to disable all grants). No nested delegation, cross-owner delegation, cross-audience delegation, remote issuance API or individual grant revocation exists yet. Direct issuance remains a separate trusted operator action. This is a development protocol, not OAuth token exchange compliance.
 
+### Authenticated stdio development transport
+
+The old unsigned wrapper has been removed; stock MCP clients need a Kgaga-aware adapter. The trusted operator selects the child command, configuration and distinct stdio audience. Register a holder-bound agent with appropriate MCP scopes for that audience, mint a passport to a protected file, and sign each individual JSON-RPC request:
+
+```bash
+# Use actual protected paths and the registered audience.
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search"}}' |
+  kgaga stdio-frame --holder-key /secure/holder.key --passport-file /secure/agent.jwt |
+  kgaga wrap --audience stdio-api -- /path/to/trusted-server
+```
+
+Each inbound line contains the passport, proof and unpadded base64url of the exact single-line JSON payload separated by TAB characters. Proofs use the existing v1 signature format with synthetic method STDIO, target /mcp, content type application/json and empty MCP header fields. HTTP does not accept the STDIO method. Same-passport sessions only; acquire a new credential and restart the wrapper when needed. A fresh proof is required for every frame; use the same protected replay state as other Kgaga verifiers. The wrapper authenticates and authorizes each frame before forwarding, starts no child before the first allowed frame, validates one matching JSON-RPC result/error for each request, rechecks credential lifecycle before returning a response, and terminates on rejection. Only notifications/initialized is forwarded without waiting for a response. Detected secret patterns block messages when redaction is enabled. Child stderr is discarded. Child pipe I/O is bounded to 30 seconds per admitted frame; local caller input/output can still block. At EOF the wrapper closes/kills and waits for the direct child rather than promising graceful shutdown.
+
+This is not a process sandbox, native MCP-client compatibility, full duplex, response streaming, independent workload attestation or a complete session implementation. Do not run untrusted child commands with access to issuer keys, holder keys, state directories, credentials or sensitive inherited environment variables. The child inherits the operator's OS permissions, working directory and environment. Use external OS isolation and a separately privileged operator for real testing; process descendants are not comprehensively contained. Unsolicited server messages are unsupported and never forwarded as such. No continuous revocation of already dispatched actions is claimed.
+
 ## Migration from Pangolin v0.1
 
-This is an early-stage security prototype, not production-ready. The stdio wrapper does not authenticate callers or enforce full passport scopes. The current CLI requires v2 passports issued by `kgaga-ca`, with a key thumbprint and explicit audience. Legacy passports are rejected; reissue them before upgrading. The legacy internal verifier is retained for regression coverage, not exposed as a CLI fallback. The HTTP input remains `X-Agent-Passport`. Upstream identity headers are `X-Kgaga-Verified-Agent` / `X-Kgaga-Agent-Owner`; the legacy Pangolin equivalents are also emitted for compatibility. The legacy redaction marker is also preserved. These are not trademark or identity verification claims.
+This is an early-stage security prototype, not production-ready. The stdio wrapper authenticates each signed frame and enforces MCP policy, but is not an OS sandbox or a complete MCP transport. The current CLI requires v2 passports issued by `kgaga-ca`, with a key thumbprint and explicit audience. Legacy passports are rejected; reissue them before upgrading. The legacy internal verifier is retained for regression coverage, not exposed as a CLI fallback. The HTTP input remains `X-Agent-Passport`. Upstream identity headers are `X-Kgaga-Verified-Agent` / `X-Kgaga-Agent-Owner`; the legacy Pangolin equivalents are also emitted for compatibility. The legacy redaction marker is also preserved. These are not trademark or identity verification claims.
 
 Before switching branches, back up your existing key files and policy securely outside the repository. To preserve an existing identity, copy the matching private and public keys to `kgaga.key` (mode 0600) and `kgaga.pub` and migrate your policy to `kgaga.yaml`. Do not run init over an existing identity. The tracked legacy `pangolin.pub` is historical, not a trusted default for new installations. For a new installation, run `kgaga init` in a dedicated directory. Never commit private keys or bearer tokens.
 

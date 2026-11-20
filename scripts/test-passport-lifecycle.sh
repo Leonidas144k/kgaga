@@ -31,6 +31,12 @@ expect_failure() {
   fi
 }
 
+"$kgaga" policy-check --config kgaga.yaml
+cp kgaga.yaml invalid.yaml
+printf '\nunknown_field: true\n' >> invalid.yaml
+expect_failure "invalid policy" "$kgaga" policy-check --config invalid.yaml
+sed 's/requests_per_minute: 120/requests_per_minute: 0/' kgaga.yaml > invalid-rate.yaml
+expect_failure "invalid policy" "$kgaga" policy-check --config invalid-rate.yaml
 expect_failure "open agent registry failed" "$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:read --audience support-api
 "$kgaga" agents-init
 expect_failure "mint rejected: agent authorization denied" "$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:read --audience support-api
@@ -94,4 +100,21 @@ child=$("$kgaga" delegate --signing-key replacement/kgaga.key --child child --ow
 "$kgaga" verify --audience support-api <<< "$child" >/dev/null
 "$kgaga" revoke --id "$parent_id"
 expect_failure "passport rejected: delegation denied" "$kgaga" verify --audience support-api <<< "$child"
-echo "PASS: attested enrolment, passport lifecycle, key rotation, holder proofs, agent suspension and one-hop delegation"
+# Use a distinct local identity and audience with a synthetic stdio child.
+"$kgaga" key-generate --out stdio-holder
+ch=$("$kgaga" agent-challenge --agent stdio-agent)
+sig=$("$kgaga" agent-sign-enrolment --holder-key stdio-holder/kgaga.key --challenge "$ch" --agent stdio-agent --owner ops@example.com --scopes mcp:tool:search --audiences stdio-api)
+"$kgaga" agent-register --agent stdio-agent --owner ops@example.com --scopes mcp:tool:search --audiences stdio-api --holder-public stdio-holder/kgaga.pub --challenge "$ch" --enrolment-proof "$sig"
+"$kgaga" mint --signing-key replacement/kgaga.key --agent stdio-agent --owner ops@example.com --scopes mcp:tool:search --audience stdio-api > stdio.jwt
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search"}}' | "$kgaga" stdio-frame --holder-key stdio-holder/kgaga.key --passport-file stdio.jwt > frame.txt
+cat > child.py <<'PY'
+import json, sys
+for line in sys.stdin:
+    request = json.loads(line)
+    assert request["params"]["name"] == "search"
+    print(json.dumps({"jsonrpc":"2.0","id":request["id"],"result":{"ok":True}}), flush=True)
+PY
+"$kgaga" wrap --audience stdio-api -- python3 child.py < frame.txt | python3 -c 'import json,sys; assert json.load(sys.stdin)["result"]["ok"]'
+expect_failure "stdio replay check rejected" "$kgaga" wrap --audience stdio-api -- python3 child.py < frame.txt
+expect_failure "invalid signed stdio frame" "$kgaga" wrap --audience stdio-api -- python3 child.py <<< '{"jsonrpc":"2.0","id":1,"method":"ping"}'
+echo "PASS: attested enrolment, passport lifecycle, key rotation, holder proofs, agent suspension, one-hop delegation and authenticated stdio"

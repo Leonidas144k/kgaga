@@ -143,9 +143,7 @@ func VerifyV2(raw string, key ed25519.PublicKey, audience string) (*AgentClaims,
 	if err := ValidateAudience(audience); err != nil {
 		return nil, err
 	}
-	if len(raw) == 0 || len(raw) > maxTokenSize {
-		return nil, errors.New("invalid passport size")
-	}
+	if err:=validateEnvelope(raw); err!=nil { return nil,err }
 	kid, err := KeyID(key)
 	if err != nil {
 		return nil, err

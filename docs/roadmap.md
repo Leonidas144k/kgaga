@@ -56,3 +56,47 @@ One-hop issuer-mediated delegation with explicit parent scope, signed parent gra
 ## Release review
 
 See [release checklist](RELEASE_CHECKLIST.md), [threat model](THREAT_MODEL.md) and [architecture](ARCHITECTURE.md). Do not confuse completion of initial identity implementation with readiness to operate a security boundary. Prioritize safe request forwarding and policy semantics before an external pilot.
+
+### Gateway increment 1
+
+HTTP policy v2: explicit method allowlists, segment-boundary longest-prefix authorization, no broader fallback, ambiguous winning rules deny, literal canonical paths, root-only upstream origin, exact POST /mcp classification, common routing override rejection and regression tests. Version 1 policy files must be migrated intentionally. Full YAML validation, strict MCP parsing, complete forwarding integrity and independent security review remain pending. Validation pending.
+
+### Gateway increment 2
+
+Strict bounded single-document YAML schema and semantic validation, programmatic policy snapshots, explicit empty MCP tool deny semantics, policy-check CLI and smoke coverage. Increment 1 validated locally and in CI at 7f66a2f. Increment 2 tests pending; parser hardening and transport security remain outstanding.
+
+### Gateway increment 3
+
+Strict bounded JSON-RPC HTTP inspector, full-tree duplicate key detection, exact envelope keys, explicit supported methods, request IDs, tool tuple validation, transport/header checks, fixed JSON errors, and block rather than rewrite detected MCP secrets. Signed gateway regression tests added. Increment 2 passed local and CI at 8cfcd71. Increment 3 validation pending. No complete MCP protocol conformance, session lifecycle, response validation or authenticated stdio guarantee.
+
+### Gateway increment 4
+
+Replace unsigned stdio wrapper with authenticated single-passport signed frames, per-message identity and replay checks, strict shared MCP parser, lockstep response-ID validation, bounded child pipe I/O, and CLI smoke coverage. No transparent native client support, OS sandbox, full-duplex session, or production assurance. Increment 3 passed local and CI at 3c0955e; increment 4 validation pending.
+
+### Gateway increment 5
+
+Bounded HTTP exchange with explicit forwarding header allowlists, no redirects or streaming, restricted UTF-8 JSON/text bodies, request/response secret-pattern checks including decoded JSON and query values, strict MCP response IDs, lifecycle recheck before response release, and signed gateway regression tests. Increment 4 passed local/CI at 6dced6b. Increment 5 validation pending. No comprehensive DLP or aggregate concurrency/security guarantee.
+
+### Gateway increment 6
+
+Mandatory local token-bucket agent rate limiting with optional strict YAML settings, stable ID keys, HTTP 429/Retry-After and bounded tracking capacity (503), per-session stdio rate limits, no depleted-bucket eviction, and deterministic concurrency/policy/gateway tests. Increment 5 passed local and CI at e8b8f78. Increment 6 validation pending. Limits are in-memory per handler/session, not distributed, durable or aggregate parent quotas.
+
+### Gateway increment 7
+
+Fixed aggregate HTTP admission and concurrency ceilings, capped accepted TCP and upstream connections, write deadline, persistent replay reservation ceiling with legacy migration and cross-process lock, and regression tests. Increment 6 passed local and CI at 730a8e6. Increment 7 validation pending. No automated pruning, complete disk accounting, distributed quotas, or production DoS guarantee.
+
+#### Increment 7 contention correction
+
+CI passed at 186079b but local race tests reproduced premature 100 ms replay quota lock failures under filesystem contention. Use one filesystem lock protocol with a three-second acquisition budget and typed busy error; remove the unbounded per-Store mutex queue. Test deliberate slow-writer contention, fail-closed timeout, duplicate nonce exclusion, persistent quota count and retry only the pre-reservation busy outcome in concurrent tests. Local/CI revalidation required.
+
+### Gateway increment 8
+
+Verified TLS 1.2+ upstream connections by default, optional private trust roots and client certificates, literal-loopback-only explicit HTTP opt-in, non-loopback listener TLS requirement, and TLS/mTLS negative tests. Increment 7 replay fix passed CI and repeated local race tests at d059a2f. Increment 8 validation pending. Upstream must enforce client certificate authorization and network isolation; no automatic rotation or CRL/OCSP enforcement.
+
+### Gateway increment 9
+
+Closed v2 credential wire schema and canonical proof signature encoding; final live authorization/proof freshness rechecks before dispatch in both transports; concurrent replay, in-flight revocation and signed ambiguity regression tests; short envelope fuzzing and repeated replay tests in CI. Increment 8 passed local and CI at 5784d51. Increment 9 validation pending; external security assurance and operational release gates remain open.
+
+### Gateway release review
+
+All nine implementation increments validated locally and in CI at 8bbfe0f (CI 44711337360). Local fuzz run: 21,532 executions, 27 new interesting inputs, no failure. Release-review documentation reconciles current architecture and threat model. Dependency/toolchain vulnerability review, internal preview approval, merge and main CI remain open. No tag or distribution approval.
