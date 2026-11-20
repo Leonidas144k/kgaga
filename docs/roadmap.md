@@ -35,4 +35,8 @@ Local persistent passport revocation: explicit store initialization, exclusive p
 
 ### Identity increment 3
 
-Local immutable agent registry, registration, inspection, permanent suspension, mandatory registry authorization at CLI mint/verify and v2 gateway, and tests. Operator filesystem permissions remain the trust boundary; no resume, record editing, distributed state or independent attestation. Pending validation.
+Local immutable agent registry, registration, inspection, permanent suspension, mandatory registry authorization at CLI mint/verify and v2 gateway, and tests. Operator filesystem permissions remain the trust boundary; no resume, record editing, distributed state or independent attestation. Increment 3 GitHub CI passed at 4e8f0bb; local CLI confirmed.
+
+### Identity increment 4
+
+Explicit trusted signing keyring, generation into a new directory, public-key trust, manual issuer selection and permanent retirement, live JWKS, mandatory keyring checks and regression tests. Single-host operator-controlled storage; no automatic rotation, distributed trust synchronization or HSM support. Pending CI.

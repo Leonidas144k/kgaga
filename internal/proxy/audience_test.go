@@ -14,6 +14,7 @@ import (
 	"github.com/Leonidas144k/kgaga/internal/policy"
 	"github.com/Leonidas144k/kgaga/internal/revocation"
 	"github.com/Leonidas144k/kgaga/internal/registry"
+	"github.com/Leonidas144k/kgaga/internal/keyring"
 )
 
 func TestAudienceGateway(t *testing.T) {
@@ -49,10 +50,17 @@ func TestAudienceGateway(t *testing.T) {
 	reg,err:=registry.Open(regPath)
 	if err!=nil { t.Fatal(err) }
 	if err:=reg.Register(registry.Agent{ID:"agent",Owner:"owner",Scopes:[]string{"db:read"},Audiences:[]string{"service-a"}}); err!=nil { t.Fatal(err) }
-	if _,err:=NewHandlerForAudience(up.URL,key,cfg,"service-a",store,nil); err==nil { t.Fatal("accepted absent registry") }
-	if _,err := NewHandlerForAudience(up.URL,key,cfg,"service-a",nil,reg); err==nil { t.Fatal("accepted missing revocation store") }
-	if _,err := NewHandlerForAudience(up.URL,key,cfg,"",store,reg); err == nil { t.Fatal("accepted empty audience") }
-	h,err := NewHandlerForAudience(up.URL,key,cfg,"service-a",store,reg)
+	trustPath:=filepath.Join(dir,"trust")
+	if err:=keyring.Init(trustPath); err!=nil { t.Fatal(err) }
+	trust,err:=keyring.Open(trustPath)
+	if err!=nil { t.Fatal(err) }
+	oldID,err:=trust.Trust(key)
+	if err!=nil { t.Fatal(err) }
+	if _,err:=NewHandlerForAudience(up.URL,nil,cfg,"service-a",store,reg); err==nil { t.Fatal("accepted absent trust store") }
+	if _,err:=NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,nil); err==nil { t.Fatal("accepted absent registry") }
+	if _,err := NewHandlerForAudience(up.URL,trust,cfg,"service-a",nil,reg); err==nil { t.Fatal("accepted missing revocation store") }
+	if _,err := NewHandlerForAudience(up.URL,trust,cfg,"",store,reg); err == nil { t.Fatal("accepted empty audience") }
+	h,err := NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,reg)
 	if err != nil { t.Fatal(err) }
 	for _,tc := range []struct{ name, token string; duplicate bool; want int }{
 		{"wrong audience",mint("service-b"),false,403},
@@ -93,18 +101,29 @@ func TestAudienceGateway(t *testing.T) {
 		if err!=nil { t.Fatal(err) }
 		check(raw,403)
 	}
-	fresh:=mint("service-a")
+	newPriv,newPub:=filepath.Join(dir,"new.key"),filepath.Join(dir,"new.pub")
+	if err:=passport.GenerateKeyPair(newPriv,newPub); err!=nil { t.Fatal(err) }
+	newKey,err:=passport.LoadPublicKey(newPub)
+	if err!=nil { t.Fatal(err) }
+	newID,err:=trust.Trust(newKey)
+	if err!=nil { t.Fatal(err) }
+	fresh,err:=passport.MintV2(newPriv,"agent","owner",[]string{"db:read"},"service-a",time.Minute)
+	if err!=nil { t.Fatal(err) }
+	check(fresh,204)
+	old:=mint("service-a")
+	check(old,204)
+	if err:=trust.Retire(oldID); err!=nil { t.Fatal(err) }
+	check(old,403)
 	check(fresh,204)
 	if err:=reg.Suspend("agent"); err!=nil { t.Fatal(err) }
 	check(fresh,403)
 	if err:=os.Rename(regPath,regPath+"-backup"); err!=nil { t.Fatal(err) }
 	check(fresh,503)
 	if err:=os.Rename(storePath,storePath+"-backup"); err!=nil { t.Fatal(err) }
-	check(mint("service-a"),503)
-	if calls.Load()!=3 { t.Fatalf("upstream calls %d want 3",calls.Load()) }
+	check(fresh,503)
+	if calls.Load()!=5 { t.Fatalf("upstream calls %d want 5",calls.Load()) }
 	w:=httptest.NewRecorder()
 	h.ServeHTTP(w,httptest.NewRequest("GET","/.well-known/jwks.json",nil))
 	var jwks passport.JWKS
-	kid, err := passport.KeyID(key)
-	if err != nil || w.Code != 200 || json.Unmarshal(w.Body.Bytes(),&jwks)!=nil || len(jwks.Keys)!=1 || jwks.Keys[0].Kid!=kid { t.Fatal("gateway published wrong key ID") }
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(),&jwks)!=nil || len(jwks.Keys)!=1 || jwks.Keys[0].Kid!=newID { t.Fatal("gateway published wrong key ID") }
 }

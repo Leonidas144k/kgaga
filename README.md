@@ -78,7 +78,7 @@ The examples below assume `kgaga` is on your `PATH`. To run it directly from the
 
 ### Mint an Agent Passport
 
-Run `kgaga init`, `kgaga revocations-init`, and `kgaga agents-init` once in a dedicated new directory. Existing installations must initialize only missing stores as part of an intentional first-time migration, not recreate lost state or regenerate keys. Register an agent before minting:
+Run `kgaga init`, `kgaga revocations-init`, `kgaga agents-init`, `kgaga keys-init`, and `kgaga key-trust --public kgaga.pub` once in a dedicated new directory. Existing installations must initialize only missing stores as part of an intentional first-time migration, not recreate lost state or regenerate keys. Register an agent before minting:
 
 ```bash
 kgaga agent-register --agent support-bot --owner ops@company.com --scopes mcp:tool:search,db:read --audiences support-api
@@ -111,7 +111,7 @@ Replace the example agent name, owner, and scopes with the values required for y
 kgaga proxy --listen 127.0.0.1:8080 --target http://localhost:3000 --audience support-api
 ```
 
-Use a distinct service identifier per trust boundary, and use the same audience for issuance and gateway verification. Audiences are explicit identifiers, not inferred from untrusted HTTP headers. Passports use Ed25519, a key thumbprint, a random credential ID, and mandatory time claims; default TTL is 15 minutes, maximum 1 hour. Unique IDs are not replay protection. Single-host passport revocation is now enforced by the CLI and audience-bound gateway. Key rotation, proof of possession, distributed revocation, and authenticated stdio remain future work. The gateway strips the passport header before forwarding, and sets verified identity headers from signed claims; upstream services must only trust these headers on an authenticated, isolated gateway connection. Use only in controlled testing, not production.
+Use a distinct service identifier per trust boundary, and use the same audience for issuance and gateway verification. Audiences are explicit identifiers, not inferred from untrusted HTTP headers. Passports use Ed25519, a key thumbprint, a random credential ID, and mandatory time claims; default TTL is 15 minutes, maximum 1 hour. Unique IDs are not replay protection. Single-host passport revocation is now enforced by the CLI and audience-bound gateway. Local operator-controlled key rotation is supported. Proof of possession, distributed revocation and authenticated stdio remain future work. The gateway strips the passport header before forwarding, and sets verified identity headers from signed claims; upstream services must only trust these headers on an authenticated, isolated gateway connection. Use only in controlled testing, not production.
 
 ### Revoke a passport
 
@@ -133,6 +133,22 @@ kgaga agent-suspend --agent support-bot
 ```
 
 Mint, verify and the audience-bound HTTP gateway require a registered agent with the exact owner, an allowed audience and a subset of allowed scopes. Suspension is permanent for that ID in this increment, blocks existing passports and prevents new issuance through the CLI. There is no resume or editing command: issue a fresh identity when needed. Use the same registry directory for all commands (default `kgaga-agents`, override with `--registry`). The store is designed for a trusted operator on a single host with hard-link support; protect all directories, never commit them, and do not recreate lost state. A running gateway detects missing/replaced registry directories. There is no distributed synchronization, independent owner proof, power-loss guarantee or cancellation of in-flight requests. The low-level signer remains a signing primitive; it does not authorize agents.
+
+### Signing key rotation
+
+Trust is explicit and fail closed. Bootstrap an existing installation only once using `kgaga keys-init` and `kgaga key-trust --public kgaga.pub`; do not recreate missing state after data loss. Use `--trust` to select the same trusted directory (default `kgaga-trust`) for mint, verify, proxy and key administration. The old key remains valid until explicitly retired.
+
+```bash
+kgaga key-generate --out /secure/new-key-directory
+NEW_KID=$(kgaga key-trust --public /secure/new-key-directory/kgaga.pub)
+kgaga keys-list
+kgaga mint --signing-key /secure/new-key-directory/kgaga.key --agent support-bot --owner ops@company.com --scopes db:read --audience support-api
+# After migrating issuers and allowing outstanding passports to expire,
+# or immediately on compromise, permanently retire the old kid:
+kgaga key-retire --kid OLD_KID
+```
+
+Replace placeholders with actual paths and the old key's thumbprint. Keep all private keys outside version control. JWKS is read from live trusted records and excludes retired keys; downstream caches and already admitted requests are outside this guarantee. Retirement is permanent through the CLI; no automatic active-key selection, distributed synchronization, HSM, tamper-proof store or verified power-loss durability is provided. This requires a local filesystem with hard-link support and trusted operator control over state and its parent directory. Do not delete retirement markers or restore stale state. The legacy experimental stdio wrapper is unaffected and does not provide this authentication.
 
 ## Migration from Pangolin v0.1
 

@@ -17,6 +17,7 @@ import (
 	"github.com/Leonidas144k/kgaga/internal/policy"
 	"github.com/Leonidas144k/kgaga/internal/revocation"
 	"github.com/Leonidas144k/kgaga/internal/registry"
+	"github.com/Leonidas144k/kgaga/internal/keyring"
 )
 
 type AuditEvent struct {
@@ -42,20 +43,21 @@ const maxRequestBytes = 1 << 20
 
 // NewHandler retains the legacy verifier for explicit internal compatibility.
 func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) (http.Handler, error) {
-	return newHandler(targetURL, pubKey, cfg, "", nil, nil)
+	return newHandler(targetURL, pubKey, cfg, "", nil, nil, nil)
 }
 
 // NewHandlerForAudience enforces v2 passports without a legacy fallback.
-func NewHandlerForAudience(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store) (http.Handler, error) {
+func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store) (http.Handler, error) {
 	if err := passport.ValidateAudience(audience); err != nil {
 		return nil, err
 	}
 	if err := store.Ready(); err != nil { return nil, err }
 	if err:=reg.Ready(); err!=nil { return nil,err }
-	return newHandler(targetURL, pubKey, cfg, audience, store, reg)
+	if err:=trust.Ready(); err!=nil { return nil,err }
+	return newHandler(targetURL, nil, cfg, audience, store, reg, trust)
 }
 
-func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store) (http.Handler, error) {
+func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, trust *keyring.Store) (http.Handler, error) {
 	target, err := url.Parse(targetURL)
 	if err != nil {
 		return nil, err
@@ -69,13 +71,13 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 	}
 	// Copy the supplied key so later caller mutations cannot desynchronise JWKS.
 	pubKey = append(ed25519.PublicKey(nil), pubKey...)
-	jwks, err := passport.JWKSForKey(pubKey)
+	var jwks *passport.JWKS
 	if audience != "" {
-		jwks, err = passport.JWKSForKeyV2(pubKey)
+		_,err=trust.JWKS()
+	} else {
+		jwks,err=passport.JWKSForKey(pubKey)
 	}
-	if err != nil {
-		return nil, err
-	}
+	if err != nil { return nil,err }
 
 	rp := &httputil.ReverseProxy{
 		Rewrite: func(pr *httputil.ProxyRequest) {
@@ -94,7 +96,14 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 
 	mux.HandleFunc("/.well-known/jwks.json", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(jwks)
+		current:=jwks
+		if audience!="" {
+			var err error
+			current,err=trust.JWKS()
+			if err!=nil { http.Error(w,"trust store unavailable",http.StatusServiceUnavailable); return }
+		}
+		w.Header().Set("Cache-Control","no-store")
+		json.NewEncoder(w).Encode(current)
 	})
 
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -113,11 +122,16 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		var claims *passport.AgentClaims
 		var err error
 		if audience != "" {
-			claims, err = passport.VerifyV2(rawToken, pubKey, audience)
+			claims, err = trust.Verify(rawToken, audience)
 		} else {
 			claims, err = passport.Verify(rawToken, pubKey)
 		}
 		if err != nil {
+			if audience!="" && !errors.Is(err,keyring.ErrDenied) {
+				emitAudit(AuditEvent{Method:r.Method,Path:r.URL.Path,Decision:"BLOCK",Reason:"trust store unavailable"})
+				http.Error(w,"trust store unavailable",http.StatusServiceUnavailable)
+				return
+			}
 			emitAudit(AuditEvent{Method: r.Method, Path: r.URL.Path, Decision: "BLOCK", Reason: "passport verification failed"})
 			http.Error(w, `{"error":"Kgaga: invalid or expired agent passport"}`, http.StatusForbidden)
 			return
