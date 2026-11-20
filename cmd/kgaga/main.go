@@ -2,6 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"bytes"
+	"github.com/Leonidas144k/kgaga/internal/mcp"
 	"flag"
 	"fmt"
 	"io"
@@ -379,35 +381,47 @@ func main() {
 		// Streaming responses require a deliberate write-deadline strategy.
 		log.Fatal(server.ListenAndServe())
 
+	case "stdio-frame":
+		fs:=flag.NewFlagSet("stdio-frame",flag.ExitOnError)
+		key:=fs.String("holder-key","","Agent private PEM path")
+		tokenFile:=fs.String("passport-file","","Protected passport file")
+		fs.Parse(os.Args[2:])
+		if fs.NArg()!=0 { log.Fatal("stdio-frame takes no positional arguments") }
+		f,err:=os.Open(*tokenFile)
+		if err!=nil { log.Fatal("cannot open passport file") }
+		raw,err:=io.ReadAll(io.LimitReader(f,(16<<10)+2))
+		_ = f.Close()
+		if err!=nil || len(raw)>=(16<<10)+2 { log.Fatal("invalid passport file") }
+		body,err:=io.ReadAll(io.LimitReader(os.Stdin,mcp.MaxPayload+3))
+		if err!=nil || len(body)>mcp.MaxPayload+2 { log.Fatal("invalid stdio message input") }
+		body=bytes.TrimSuffix(body,[]byte("\n"))
+		body=bytes.TrimSuffix(body,[]byte("\r"))
+		frame,err:=proxy.SignStdioFrame(*key,strings.TrimSpace(string(raw)),body)
+		if err!=nil { log.Fatalf("stdio frame failed: %v",err) }
+		fmt.Println(frame)
+
 	case "wrap":
-		args := []string{}
-		foundDash := false
-		for _, arg := range os.Args[2:] {
-			if arg == "--" {
-				foundDash = true
-				continue
-			}
-			if foundDash {
-				args = append(args, arg)
-			}
-		}
-		if len(args) == 0 {
-			log.Fatalf("Usage: kgaga wrap -- <command> [args...]")
-		}
-
-		pubKey, err := passport.LoadPublicKey("kgaga.pub")
-		if err != nil {
-			log.Fatalf("load public key failed (run 'kgaga init' first): %v", err)
-		}
-		cfg, err := policy.Load("kgaga.yaml")
-		if err != nil {
-			log.Fatalf("load policy failed: %v", err)
-		}
-
-		fmt.Fprintf(os.Stderr, "🛡️  Kgaga Stdio Wrapper active on: %s\n", strings.Join(args, " "))
-		if err := proxy.RunStdioProxy(args[0], args[1:], pubKey, cfg); err != nil {
-			log.Fatalf("wrapped process failed: %v", err)
-		}
+		fs:=flag.NewFlagSet("wrap",flag.ExitOnError)
+		audience:=fs.String("audience","","Required distinct stdio service identifier")
+		configPath:=fs.String("config","kgaga.yaml","Policy file")
+		trustDir:=fs.String("trust",keyring.DefaultDir,"Public trust directory")
+		regDir:=fs.String("registry",registry.DefaultDir,"Registry directory")
+		revDir:=fs.String("revocations",revocation.DefaultDir,"Revocation directory")
+		replayDir:=fs.String("replay",passport.ReplayDir,"Replay directory")
+		fs.Parse(os.Args[2:])
+		args:=fs.Args()
+		if len(args)==0 || *audience=="" { log.Fatal("Usage: kgaga wrap --audience <service> -- <command> [args...]") }
+		cfg,err:=policy.Load(*configPath)
+		if err!=nil { log.Fatalf("load policy failed: %v",err) }
+		trust,err:=keyring.Open(*trustDir)
+		if err!=nil { log.Fatal(err) }
+		reg,err:=registry.Open(*regDir)
+		if err!=nil { log.Fatal(err) }
+		rev,err:=revocation.Open(*revDir)
+		if err!=nil { log.Fatal(err) }
+		replay,err:=revocation.Open(*replayDir)
+		if err!=nil { log.Fatal(err) }
+		if err:=proxy.RunStdioProxy(args[0],args[1:],cfg,*audience,trust,reg,rev,replay,os.Stdin,os.Stdout); err!=nil { log.Fatalf("stdio session failed: %v",err) }
 
 	default:
 		printUsage()
@@ -447,5 +461,6 @@ Usage:
   kgaga verify --audience <service>                          Verify a passport from stdin and check revocation
   kgaga policy-check --config <file>                        Validate policy without starting gateway
   kgaga proxy --listen 127.0.0.1:8080 --target <url> --audience <service>                 Start the security gateway
-  kgaga wrap -- <command> [args...]                         Wrap a local stdio MCP server`)
+  kgaga stdio-frame --holder-key <pem> --passport-file <file>  Sign a JSON-RPC message from stdin
+  kgaga wrap --audience <service> -- <command> [args...]       Authenticated lockstep stdio wrapper`)
 }

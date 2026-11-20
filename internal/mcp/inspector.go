@@ -16,8 +16,7 @@ const MaxPayload = 1 << 20
 const maxDepth = 32
 const maxTokens = 65536
 
-// RPCRequest remains for the experimental, unauthenticated stdio wrapper.
-// The HTTP boundary uses exact field names and the strict decoder below.
+// RPCRequest describes a JSON-RPC request. Security decisions use the strict decoder below.
 type RPCRequest struct {
 	JSONRPC string         `json:"jsonrpc"`
 	ID      any            `json:"id,omitempty"`
@@ -26,6 +25,8 @@ type RPCRequest struct {
 }
 
 type InspectionResult struct {
+	ID any
+	Notification bool
 	Method string
 	ToolName string
 	RequiredScope string
@@ -142,6 +143,16 @@ func Inspect(r *http.Request,body []byte) (*InspectionResult,error) {
 	for k,v:=range params {
 		if k!="charset" || !strings.EqualFold(v,"utf-8") { return nil,errors.New("unsupported MCP content type parameter") }
 	}
+	return inspectMessage(body,r.Header.Get("Mcp-Method"),r.Header.Get("Mcp-Name"),len(r.Header.Values("Mcp-Name"))>0)
+}
+
+// InspectStdio uses the same strict request grammar without HTTP headers.
+func InspectStdio(body []byte) (*InspectionResult,error) {
+	if bytes.ContainsAny(body,"\r\n") { return nil,invalid }
+	return inspectMessage(body,"","",false)
+}
+
+func inspectMessage(body []byte,methodHeader,nameHeader string,hasNameHeader bool) (*InspectionResult,error) {
 	obj,err:=decode(body)
 	if err!=nil { return nil,err }
 	for key:=range obj {
@@ -164,8 +175,8 @@ func Inspect(r *http.Request,body []byte) (*InspectionResult,error) {
 		p,ok=raw.(map[string]any)
 		if !ok { return nil,invalid }
 	}
-	if h:=r.Header.Get("Mcp-Method"); h!="" && h!=method { return nil,errors.New("MCP method header mismatch") }
-	res:=&InspectionResult{Method:method,RequiredScope:"mcp:method:"+method}
+	if h:=methodHeader; h!="" && h!=method { return nil,errors.New("MCP method header mismatch") }
+	res:=&InspectionResult{ID:id,Notification:!present,Method:method,RequiredScope:"mcp:method:"+method}
 	if method=="tools/call" {
 		// Disallow alternative spellings of the structural fields and
 		// unknown tool-call fields. Arguments remain application data.
@@ -179,11 +190,37 @@ func Inspect(r *http.Request,body []byte) (*InspectionResult,error) {
 				if _,ok:=raw.(map[string]any); !ok { return nil,invalid }
 			}
 		}
-		if h:=r.Header.Get("Mcp-Name"); h!="" && h!=name { return nil,errors.New("MCP tool header mismatch") }
+		if h:=nameHeader; h!="" && h!=name { return nil,errors.New("MCP tool header mismatch") }
 		res.ToolName=name
 		res.RequiredScope="mcp:tool:"+name
-	} else if len(r.Header.Values("Mcp-Name"))>0 {
+	} else if hasNameHeader {
 		return nil,errors.New("unexpected MCP tool header")
 	}
 	return res,nil
+}
+
+// ValidateStdioResponse accepts only a single result or error for the
+// outstanding request. Server-initiated requests and notifications are not
+// supported by the lockstep development transport.
+func ValidateStdioResponse(body []byte,id any) error {
+	if !validID(id) || bytes.ContainsAny(body,"\r\n") { return invalid }
+	obj,err:=decode(body)
+	if err!=nil { return err }
+	for k:=range obj { switch k { case "jsonrpc","id","result","error": default: return invalid } }
+	v,ok:=obj["jsonrpc"].(string)
+	if !ok || v!="2.0" || !validID(obj["id"]) || obj["id"]!=id { return invalid }
+	result,hasResult:=obj["result"]
+	rpcErr,hasError:=obj["error"]
+	if hasResult==hasError { return invalid }
+	if hasResult {
+		if _,ok:=result.(map[string]any); !ok { return invalid }
+		return nil
+	}
+	e,ok:=rpcErr.(map[string]any)
+	if !ok { return invalid }
+	for k:=range e { switch k { case "code","message","data": default: return invalid } }
+	code,ok:=e["code"].(json.Number)
+	if !ok || !validID(code) { return invalid }
+	if _,ok:=e["message"].(string); !ok { return invalid }
+	return nil
 }

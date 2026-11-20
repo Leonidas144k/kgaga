@@ -12,7 +12,7 @@ Kgaga acts as a lightning-fast, single-binary Go gateway and CLI wrapper that ad
 1. **Cryptographic Agent Passports** (Ed25519-signed short-lived tokens bounding agent identity, owner, and scoped permissions).
 2. **MCP Desync & Protocol Confusion Protection** (Initial header-to-body JSON-RPC validation; full protocol hardening is pending).
 3. **Real-Time Secret Scrubbing** (Automatic regex redaction of AWS keys, GitHub PATs, OpenAI tokens, and bearer credentials).
-4. **Local Stdio Wrapping** (`kgaga wrap`) for experimental local execution in Claude Desktop, Cursor, or Claude Code.
+4. **Authenticated Stdio Wrapping** (`kgaga wrap`) for a restricted signed-frame development transport; a client adapter is required.
 
 ## Features
 - **Go Core:** Written in Go with single-binary distribution and zero runtime dependencies.
@@ -138,7 +138,7 @@ The parser rejects duplicate keys (including case-folded aliases as detected by 
 kgaga proxy --listen 127.0.0.1:8080 --target http://localhost:3000 --audience support-api
 ```
 
-Use a distinct service identifier per trust boundary, and use the same audience for issuance and gateway verification. Audiences are explicit identifiers, not inferred from untrusted HTTP headers. Passports use Ed25519, a key thumbprint, a random credential ID, and mandatory time claims; default TTL is 15 minutes, maximum 1 hour. Unique IDs are not replay protection. Single-host passport revocation is now enforced by the CLI and audience-bound gateway. Local operator-controlled key rotation is supported. Holder-bound HTTP request proofs and single-host replay protection are implemented; distributed revocation and authenticated stdio remain future work. The gateway strips the passport header before forwarding, and sets verified identity headers from signed claims; upstream services must only trust these headers on an authenticated, isolated gateway connection. Use only in controlled testing, not production.
+Use a distinct service identifier per trust boundary, and use the same audience for issuance and gateway verification. Audiences are explicit identifiers, not inferred from untrusted HTTP headers. Passports use Ed25519, a key thumbprint, a random credential ID, and mandatory time claims; default TTL is 15 minutes, maximum 1 hour. Unique IDs are not replay protection. Single-host passport revocation is now enforced by the CLI and audience-bound gateway. Local operator-controlled key rotation is supported. Holder-bound HTTP request proofs and single-host replay protection are implemented; authenticated stdio is available in restricted lockstep mode; distributed revocation remains future work. The gateway strips the passport header before forwarding, and sets verified identity headers from signed claims; upstream services must only trust these headers on an authenticated, isolated gateway connection. Use only in controlled testing, not production.
 
 ### Revoke a passport
 
@@ -175,7 +175,7 @@ kgaga mint --signing-key /secure/new-key-directory/kgaga.key --agent support-bot
 kgaga key-retire --kid OLD_KID
 ```
 
-Replace placeholders with actual paths and the old key's thumbprint. Keep all private keys outside version control. JWKS is read from live trusted records and excludes retired keys; downstream caches and already admitted requests are outside this guarantee. Retirement is permanent through the CLI; no automatic active-key selection, distributed synchronization, HSM, tamper-proof store or verified power-loss durability is provided. This requires a local filesystem with hard-link support and trusted operator control over state and its parent directory. Do not delete retirement markers or restore stale state. The legacy experimental stdio wrapper is unaffected and does not provide this authentication.
+Replace placeholders with actual paths and the old key's thumbprint. Keep all private keys outside version control. JWKS is read from live trusted records and excludes retired keys; downstream caches and already admitted requests are outside this guarantee. Retirement is permanent through the CLI; no automatic active-key selection, distributed synchronization, HSM, tamper-proof store or verified power-loss durability is provided. This requires a local filesystem with hard-link support and trusted operator control over state and its parent directory. Do not delete retirement markers or restore stale state. The old unauthenticated stdio wrapper has been removed.
 
 ### Holder-bound requests (development protocol)
 
@@ -202,9 +202,24 @@ An enrolled parent with a passport carrying `kgaga:delegate` can sign a grant fo
 
 Delegated credentials use the distinct JWT type `kgaga-delegated+jwt`. They embed the original signed parent passport and grant signature to allow live revalidation of parent trust, revocation, registered holder, permissions and grant constraints in the CLI and HTTP gateway. Older builds reject this type. A parent passport is credential material; protect the child passport accordingly. Revoking or suspending the parent or retiring its signing key blocks subsequent delegated requests. Grants may be reused by the trusted issuer until expiry (revoking one child passport does not revoke the grant; revoke the parent to disable all grants). No nested delegation, cross-owner delegation, cross-audience delegation, remote issuance API or individual grant revocation exists yet. Direct issuance remains a separate trusted operator action. This is a development protocol, not OAuth token exchange compliance.
 
+### Authenticated stdio development transport
+
+The old unsigned wrapper has been removed; stock MCP clients need a Kgaga-aware adapter. The trusted operator selects the child command, configuration and distinct stdio audience. Register a holder-bound agent with appropriate MCP scopes for that audience, mint a passport to a protected file, and sign each individual JSON-RPC request:
+
+```bash
+# Use actual protected paths and the registered audience.
+printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search"}}' |
+  kgaga stdio-frame --holder-key /secure/holder.key --passport-file /secure/agent.jwt |
+  kgaga wrap --audience stdio-api -- /path/to/trusted-server
+```
+
+Each inbound line contains the passport, proof and unpadded base64url of the exact single-line JSON payload separated by TAB characters. Proofs use the existing v1 signature format with synthetic method STDIO, target /mcp, content type application/json and empty MCP header fields. HTTP does not accept the STDIO method. Same-passport sessions only; acquire a new credential and restart the wrapper when needed. A fresh proof is required for every frame; use the same protected replay state as other Kgaga verifiers. The wrapper authenticates and authorizes each frame before forwarding, starts no child before the first allowed frame, validates one matching JSON-RPC result/error for each request, rechecks credential lifecycle before returning a response, and terminates on rejection. Only notifications/initialized is forwarded without waiting for a response. Detected secret patterns block messages when redaction is enabled. Child stderr is discarded. Child pipe I/O is bounded to 30 seconds per admitted frame; local caller input/output can still block. At EOF the wrapper closes/kills and waits for the direct child rather than promising graceful shutdown.
+
+This is not a process sandbox, native MCP-client compatibility, full duplex, response streaming, independent workload attestation or a complete session implementation. Do not run untrusted child commands with access to issuer keys, holder keys, state directories, credentials or sensitive inherited environment variables. The child inherits the operator's OS permissions, working directory and environment. Use external OS isolation and a separately privileged operator for real testing; process descendants are not comprehensively contained. Unsolicited server messages are unsupported and never forwarded as such. No continuous revocation of already dispatched actions is claimed.
+
 ## Migration from Pangolin v0.1
 
-This is an early-stage security prototype, not production-ready. The stdio wrapper does not authenticate callers or enforce full passport scopes. The current CLI requires v2 passports issued by `kgaga-ca`, with a key thumbprint and explicit audience. Legacy passports are rejected; reissue them before upgrading. The legacy internal verifier is retained for regression coverage, not exposed as a CLI fallback. The HTTP input remains `X-Agent-Passport`. Upstream identity headers are `X-Kgaga-Verified-Agent` / `X-Kgaga-Agent-Owner`; the legacy Pangolin equivalents are also emitted for compatibility. The legacy redaction marker is also preserved. These are not trademark or identity verification claims.
+This is an early-stage security prototype, not production-ready. The stdio wrapper authenticates each signed frame and enforces MCP policy, but is not an OS sandbox or a complete MCP transport. The current CLI requires v2 passports issued by `kgaga-ca`, with a key thumbprint and explicit audience. Legacy passports are rejected; reissue them before upgrading. The legacy internal verifier is retained for regression coverage, not exposed as a CLI fallback. The HTTP input remains `X-Agent-Passport`. Upstream identity headers are `X-Kgaga-Verified-Agent` / `X-Kgaga-Agent-Owner`; the legacy Pangolin equivalents are also emitted for compatibility. The legacy redaction marker is also preserved. These are not trademark or identity verification claims.
 
 Before switching branches, back up your existing key files and policy securely outside the repository. To preserve an existing identity, copy the matching private and public keys to `kgaga.key` (mode 0600) and `kgaga.pub` and migrate your policy to `kgaga.yaml`. Do not run init over an existing identity. The tracked legacy `pangolin.pub` is historical, not a trusted default for new installations. For a new installation, run `kgaga init` in a dedicated directory. Never commit private keys or bearer tokens.
 

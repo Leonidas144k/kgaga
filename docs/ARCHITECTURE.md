@@ -8,7 +8,7 @@ Status: development preview, reviewed against 662eafd.
 - Agent holds its own Ed25519 private key. Only its public key is registered. A five-minute one-time challenge proves possession at new CLI enrollment, not independent workload integrity.
 - Gateway reads public trust, registry, revocation and replay stores; it does not require the issuer private key for HTTP verification.
 - Protected upstream must not be directly accessible by agents. It must trust identity headers only over an authenticated gateway connection.
-- The local experimental stdio wrapper is outside the HTTP identity trust boundary.
+- Authenticated lockstep stdio uses the same identity and local replay stores, a distinct audience, synthetic STDIO request-proof binding, one pinned passport per child and matching response IDs. The operator must isolate the child at OS level.
 
 ## Components
 

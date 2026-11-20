@@ -2,7 +2,7 @@
 
 ## Supported status
 
-Kgaga is an experimental single-host identity and gateway prototype. No version is designated production-ready or guaranteed to receive security updates. Do not expose this prototype to untrusted networks or rely on it as the sole boundary protecting real data, payments or production systems. The stdio wrapper is not an authenticated security boundary.
+Kgaga is an experimental single-host identity and gateway prototype. No version is designated production-ready or guaranteed to receive security updates. Do not expose this prototype to untrusted networks or rely on it as the sole boundary protecting real data, payments or production systems. The restricted stdio wrapper verifies signed frames but is not an OS sandbox or a production security boundary.
 
 ## Reporting
 

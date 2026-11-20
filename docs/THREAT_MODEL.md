@@ -21,7 +21,7 @@ Protect issuer and holder keys, enrolled identities and permissions, credential 
 | Protocol confusion | Initial JSON-RPC and header/body checks | Parser ambiguity, route classification and unsupported transports need strict handling |
 | Request transformation | Signed selected inbound fields | Unbound forwarding headers and hop-by-hop behavior; verify downstream semantics |
 | Untrusted upstream | Configured HTTP(S) target | No comprehensive response bounds, streaming deadlines, isolation or authenticated channel enforcement |
-| Unauthenticated stdio | Experimental denylist/redaction | Not an identity boundary; disable for security-sensitive use |
+| Stdio impersonation | Signed frames, live credential checks, scope policy, replay markers | Custom lockstep transport, no sandbox or full-duplex MCP; direct child inherits operator privileges |
 | Data exfiltration | Limited regex redaction | Not comprehensive DLP; encoding, tool output, headers and semantic leakage remain |
 | Audit manipulation | JSON decision logs | Not immutable; incomplete coverage and potentially sensitive fields |
 | Resource exhaustion | Request body, header and read limits | Rate limits, bounded state, response limits and denial-of-service testing needed |

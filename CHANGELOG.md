@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.4.0 gateway development
 
+- Replace unsigned stdio wrapper with signed frames, live identity/scope checks, lockstep response validation and a frame-signing CLI. Native clients need an adapter; OS isolation remains required.
+
 - HTTP policy version 2 requires explicit allowed methods; most-specific segment prefix wins, no broader fallback.
 - Reject ambiguous/nonliteral paths, common routing overrides, upstream base paths/queries and header-selected MCP routing.
 - Existing v1 policies require intentional migration.

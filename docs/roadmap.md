@@ -68,3 +68,7 @@ Strict bounded single-document YAML schema and semantic validation, programmatic
 ### Gateway increment 3
 
 Strict bounded JSON-RPC HTTP inspector, full-tree duplicate key detection, exact envelope keys, explicit supported methods, request IDs, tool tuple validation, transport/header checks, fixed JSON errors, and block rather than rewrite detected MCP secrets. Signed gateway regression tests added. Increment 2 passed local and CI at 8cfcd71. Increment 3 validation pending. No complete MCP protocol conformance, session lifecycle, response validation or authenticated stdio guarantee.
+
+### Gateway increment 4
+
+Replace unsigned stdio wrapper with authenticated single-passport signed frames, per-message identity and replay checks, strict shared MCP parser, lockstep response-ID validation, bounded child pipe I/O, and CLI smoke coverage. No transparent native client support, OS sandbox, full-duplex session, or production assurance. Increment 3 passed local and CI at 3c0955e; increment 4 validation pending.
