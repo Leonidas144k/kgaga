@@ -340,6 +340,9 @@ func main() {
 		if err!=nil { log.Fatalf("invalid policy: %v",err) }
 		fmt.Printf("PASS: policy version %s, %d HTTP rules, %d allowed MCP tools\n",cfg.Version,len(cfg.Rules),len(cfg.MCP.AllowedTools))
 
+	case "vault-init", "vault-put":
+		runVaultOperator(os.Args[1],os.Args[2:])
+
 	case "proxy":
 		fs := flag.NewFlagSet("proxy", flag.ExitOnError)
 		configPath:=fs.String("config","kgaga.yaml","Policy file to validate and load")
@@ -355,6 +358,11 @@ func main() {
 		allowHTTP:=fs.Bool("allow-loopback-http",false,"Allow plaintext upstream at literal loopback IP only")
 		listenCert:=fs.String("tls-cert","","Gateway listener certificate PEM")
 		listenKey:=fs.String("tls-key","","Gateway listener key PEM")
+		vaultPolicy:=fs.String("vault-policy","","Enable mandatory Vault access policy file")
+		vaultDir:=fs.String("vault-dir","","Existing encrypted Vault directory")
+		vaultID:=fs.String("vault-id","","Expected Vault ID (lowercase hex)")
+		vaultKey:=fs.String("vault-kek-file","","External master key file")
+		vaultKeyID:=fs.String("vault-kek-id","","Expected master key ID (lowercase hex)")
 		audience := fs.String("audience", "", "Required service identifier")
 		fs.Parse(os.Args[2:])
 
@@ -373,7 +381,18 @@ func main() {
 		if err!=nil { log.Fatalf("open replay store failed: %v",err) }
 		listenerTLS,err:=proxy.ListenerTLS(*listen,*listenCert,*listenKey)
 		if err!=nil { log.Fatalf("listener TLS setup failed: %v",err) }
-		handler, err := proxy.NewHandlerForAudience(*target, trust, cfg, *audience, store, reg,replay,proxy.UpstreamTLSOptions{CAFile:*upstreamCA,ClientCertFile:*upstreamCert,ClientKeyFile:*upstreamKey,AllowLoopbackHTTP:*allowHTTP})
+		var handler http.Handler
+		options:=proxy.UpstreamTLSOptions{CAFile:*upstreamCA,ClientCertFile:*upstreamCert,ClientKeyFile:*upstreamKey,AllowLoopbackHTTP:*allowHTTP}
+		nVault:=0
+		for _,v:=range []string{*vaultPolicy,*vaultDir,*vaultID,*vaultKey,*vaultKeyID} { if v!="" { nVault++ } }
+		if nVault==0 {
+			handler,err=proxy.NewHandlerForAudience(*target,trust,cfg,*audience,store,reg,replay,options)
+		} else {
+			if nVault!=5 || listenerTLS==nil { log.Fatal("vault mode requires all five vault flags and listener TLS") }
+			broker,e:=proxy.OpenVaultGateway(*vaultPolicy,*vaultDir,*vaultID,*vaultKey,*vaultKeyID)
+			if e!=nil { log.Fatal("vault setup failed") }
+			handler,err=proxy.NewHandlerWithVault(*target,trust,cfg,*audience,store,reg,replay,broker,options)
+		}
 		if err != nil {
 			log.Fatalf("proxy setup failed: %v", err)
 		}
@@ -474,6 +493,8 @@ Usage:
   kgaga revocations-init                                    Initialize the local revocation store once
   kgaga revoke --id <jti>                                    Revoke a passport
   kgaga verify --audience <service>                          Verify a passport from stdin and check revocation
+  kgaga vault-init --vault-dir <dir> --vault-id <id> --vault-kek-file <path> --vault-kek-id <id>  Initialize operator vault
+  kgaga vault-put --vault-dir <dir> --vault-id <id> --vault-kek-file <path> --vault-kek-id <id> --name <name> --version <n>  Store bearer token from stdin
   kgaga policy-check --config <file>                        Validate policy without starting gateway
   kgaga proxy --listen 127.0.0.1:8080 --target <https-url> --audience <service>          Start the security gateway (see proxy --help for TLS flags)
   kgaga stdio-frame --holder-key <pem> --passport-file <file>  Sign a JSON-RPC message from stdin

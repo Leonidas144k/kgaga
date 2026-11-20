@@ -44,11 +44,22 @@ const maxRequestBytes = 1 << 20
 
 // NewHandler retains the legacy verifier for explicit internal compatibility.
 func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, options ...UpstreamTLSOptions) (http.Handler, error) {
-	return newHandler(targetURL, pubKey, cfg, "", nil, nil, nil, nil, options...)
+	return newHandler(targetURL, pubKey, cfg, "", nil, nil, nil, nil,nil, options...)
 }
 
 // NewHandlerForAudience enforces v2 passports without a legacy fallback.
 func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, replay *revocation.Store, options ...UpstreamTLSOptions) (http.Handler, error) {
+	return newAudienceHandler(targetURL,trust,cfg,audience,store,reg,replay,nil,options...)
+}
+
+// NewHandlerWithVault requires the additional policy for every protected
+// request. A nil broker cannot accidentally enable plain gateway mode.
+func NewHandlerWithVault(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, replay *revocation.Store, broker *VaultGateway, options ...UpstreamTLSOptions) (http.Handler,error) {
+	if broker==nil { return nil,errors.New("vault configuration required") }
+	return newAudienceHandler(targetURL,trust,cfg,audience,store,reg,replay,broker,options...)
+}
+
+func newAudienceHandler(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, replay *revocation.Store, broker *VaultGateway, options ...UpstreamTLSOptions) (http.Handler,error) {
 	if err := passport.ValidateAudience(audience); err != nil {
 		return nil, err
 	}
@@ -57,10 +68,10 @@ func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.C
 	if err:=trust.Ready(); err!=nil { return nil,err }
 	if err:=replay.Ready(); err!=nil { return nil,err }
 	if store.SameDirectory(replay) { return nil,errors.New("replay and revocation stores must be separate") }
-	return newHandler(targetURL, nil, cfg, audience, store, reg, trust, replay,options...)
+	return newHandler(targetURL, nil, cfg, audience, store, reg, trust, replay,broker,options...)
 }
 
-func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, trust *keyring.Store, replay *revocation.Store, options ...UpstreamTLSOptions) (http.Handler, error) {
+func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, trust *keyring.Store, replay *revocation.Store, broker *VaultGateway, options ...UpstreamTLSOptions) (http.Handler, error) {
 	target, err := url.Parse(targetURL)
 	if err != nil {
 		return nil, err
@@ -74,6 +85,10 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 	if err!=nil { return nil,err }
 	cfg,err=cfg.Snapshot()
 	if err!=nil { return nil,err }
+	if broker!=nil {
+		if audience=="" || target.Scheme!="https" || tlsConfig==nil || !cfg.RedactSecrets { return nil,errors.New("vault requires authenticated HTTPS and enabled secret inspection") }
+		if err:=broker.bind(targetURL,audience); err!=nil { return nil,err }
+	}
 	// Copy the supplied key so later caller mutations cannot desynchronise JWKS.
 	pubKey = append(ed25519.PublicKey(nil), pubKey...)
 	var jwks *passport.JWKS
@@ -272,7 +287,28 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 				return
 			}
 		}
-		response,err:=exchange(r,target,transport,claims,bodyBytes,mcpInfo,cfg.RedactSecrets)
+		var secret []byte
+		if broker!=nil {
+			secret,err=broker.credential(claims,audience,targetURL,r,mcpInfo)
+			if err!=nil {
+				status:=http.StatusServiceUnavailable
+				if errors.Is(err,policy.ErrVaultDenied) { status=http.StatusForbidden }
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault credential unavailable or denied"})
+				if isMCP { writeMCPError(w,status,-32603,"vault credential unavailable or denied") } else { http.Error(w,"vault credential unavailable or denied",status) }
+				return
+			}
+			defer clear(secret)
+			// Storage lookup is potentially slow. Repeat live checks after
+			// the lookup so a stale decision cannot authorize injection.
+			e:=checkLive(rawToken,audience,trust,reg,store)
+			if e==nil { _,e=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now()) }
+			if e!=nil {
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault final admission denied"})
+				if isMCP { writeMCPError(w,403,-32603,"vault final admission denied") } else { http.Error(w,"vault final admission denied",403) }
+				return
+			}
+		}
+		response,err:=exchange(r,target,transport,claims,bodyBytes,mcpInfo,cfg.RedactSecrets,secret)
 		if err!=nil {
 			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"upstream response rejected or unavailable"})
 			if isMCP { writeMCPError(w,http.StatusBadGateway,-32603,"upstream response rejected") } else { http.Error(w,"upstream response rejected",http.StatusBadGateway) }

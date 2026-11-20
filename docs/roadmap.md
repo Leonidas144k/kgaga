@@ -120,3 +120,7 @@ Increment 2 passed local repeated race tests and CI at a2689b1 (44719713905). In
 ### Vault increment 4
 
 Increment 3 passed repeated local race tests, full lifecycle and CI at e344718 (44721889128). Increment 4 adds strict separate YAML Vault policy, exact identity/owner/audience/HTTPS origin/method/target/MCP tool grants, all-scopes checks, pinned secret versions and vault identity, default-deny immutable evaluation, invalid configuration and scope/operation isolation tests. Validation pending. No gateway wiring, secret reads, delegated Vault grants or injection yet.
+
+### Vault increment 5
+
+Increment 4 passed repeated local policy/vault tests and CI at b6a5079 (44727758123). Increment 5 adds opt-in mandatory Vault gateway authorization, independent identity/origin binding, fixed bearer injection over verified TLS, fresh admission checks, exact response token blocking and operator-only init/put CLI. Synthetic HTTPS integration and negative tests; validation pending. No production credentials, enforced KEK wrapping quota, general DLP, dynamic leases or rotation.

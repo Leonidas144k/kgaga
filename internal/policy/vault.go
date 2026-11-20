@@ -55,6 +55,7 @@ type VaultSelection struct {
 // VaultPolicy is immutable after successful parsing. An empty policy or
 // missing exact grant denies access. Injection is not implemented here.
 type VaultPolicy struct {
+	id string
 	grants map[vaultSelector]vaultGrant
 }
 
@@ -148,7 +149,7 @@ func ParseVaultPolicy(raw []byte)(*VaultPolicy,error) {
 	if top["version"].Value!="1" || !vaultID(id) { return nil,ErrVaultPolicy }
 	list:=top["grants"]
 	if nodeType(list,yaml.SequenceNode,"!!seq","grants")!=nil || len(list.Content)>MaxVaultGrants { return nil,ErrVaultPolicy }
-	out:=&VaultPolicy{grants:make(map[vaultSelector]vaultGrant,len(list.Content))}
+	out:=&VaultPolicy{id:id,grants:make(map[vaultSelector]vaultGrant,len(list.Content))}
 	for _,node:=range list.Content {
 		keys:=[]string{"agent_id","owner","audience","origin","method","target","mcp_method","tool","secret_name"}
 		required:=append(slices.Clone(keys),"required_scopes","secret_version")
@@ -199,4 +200,14 @@ func (p *VaultPolicy) Authorize(c *passport.AgentClaims,audience string,op Vault
 	if !ok { return VaultSelection{},ErrVaultDenied }
 	for _,scope:=range g.scopes { if !slices.Contains(c.Scopes,scope) { return VaultSelection{},ErrVaultDenied } }
 	return g.selection,nil
+}
+
+// ValidateBinding prevents accidentally enabling an unrelated policy on
+// a gateway. Empty policies remain valid deny-all policies.
+func (p *VaultPolicy) ValidateBinding(origin,audience,id string) error {
+	if p==nil || p.grants==nil || p.id!=id || !vaultID(id) || !exactHTTPSOrigin(origin) || passport.ValidateAudience(audience)!=nil { return ErrVaultPolicy }
+	for selector:=range p.grants {
+		if selector.op.Origin!=origin || selector.audience!=audience { return ErrVaultPolicy }
+	}
+	return nil
 }
