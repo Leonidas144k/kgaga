@@ -3,12 +3,14 @@ Cryptographic Identity & Security Gateway for Autonomous AI Agents & MCP Servers
 
 The modern equivalent of foundational trust infrastructure, built for the era of AI agents.
 
+**Development preview — not for production or Internet-facing deployment.** See [security policy](SECURITY.md), [threat model](docs/THREAT_MODEL.md), [architecture](docs/ARCHITECTURE.md) and [release gates](docs/RELEASE_CHECKLIST.md).
+
 ## What is Kgaga?
 As companies deploy autonomous AI agents and Model Context Protocol (MCP) servers, they face a terrifying security gap: shared hardcoded API keys, unmonitored tool calls, prompt-injection data exfiltration, and header/body desync attacks.
 
 Kgaga acts as a lightning-fast, single-binary Go gateway and CLI wrapper that addresses parts of this by introducing:
 1. **Cryptographic Agent Passports** (Ed25519-signed short-lived tokens bounding agent identity, owner, and scoped permissions).
-2. **MCP Desync & Protocol Confusion Protection** (Strict header-to-body JSON-RPC validation).
+2. **MCP Desync & Protocol Confusion Protection** (Initial header-to-body JSON-RPC validation; full protocol hardening is pending).
 3. **Real-Time Secret Scrubbing** (Automatic regex redaction of AWS keys, GitHub PATs, OpenAI tokens, and bearer credentials).
 4. **Local Stdio Wrapping** (`kgaga wrap`) for experimental local execution in Claude Desktop, Cursor, or Claude Code.
 
@@ -78,7 +80,7 @@ The examples below assume `kgaga` is on your `PATH`. To run it directly from the
 
 ### Mint an Agent Passport
 
-Run `kgaga init`, `kgaga revocations-init`, `kgaga agents-init`, `kgaga keys-init`, and `kgaga key-trust --public kgaga.pub` once in a dedicated new directory. Existing installations must initialize only missing stores as part of an intentional first-time migration, not recreate lost state or regenerate keys. Register an agent before minting:
+Run `kgaga init`, `kgaga revocations-init`, `kgaga agents-init`, `kgaga replay-init`, `kgaga keys-init`, and `kgaga key-trust --public kgaga.pub` once in a dedicated new directory. Existing installations must initialize only missing stores as part of an intentional first-time migration, not recreate lost state or regenerate keys. Register an agent before minting:
 
 ```bash
 kgaga key-generate --out /secure/agent-holder
@@ -110,7 +112,7 @@ $TOKEN | kgaga verify --audience "support-api"
 
 Replace the example agent name, owner, and scopes with the values required for your agent.
 
-### Start an audience-bound gateway
+### Start an audience-bound gateway (isolated test environment only)
 
 ```bash
 kgaga proxy --listen 127.0.0.1:8080 --target http://localhost:3000 --audience support-api
@@ -128,7 +130,7 @@ kgaga revoke --id <jti>
 
 Use the actual 32-character lowercase hexadecimal ID. Subsequent CLI verification fails, and gateway requests using the revoked passport return HTTP 403. A missing or replaced store fails closed (HTTP 503 on the gateway). All three commands (`verify`, `proxy`, and `revoke`) must use the same local directory, configurable via `--revocations`. The default is `kgaga-revocations` relative to the working directory.
 
-Keep the store and its parent directory under trusted operator control, backed up, and outside source control. Do not recreate lost revocation state; restore it from trusted backup or retire the affected credentials. Records are retained indefinitely in this increment. This single-host design is not tamper-proof, does not synchronize across hosts, cannot cancel already admitted requests, and does not prevent replay of an unrevoked bearer token.
+Keep the store and its parent directory under trusted operator control, backed up, and outside source control. Do not recreate lost revocation state; restore it from trusted backup or retire the affected credentials. Records are retained indefinitely in this increment. This single-host design is not tamper-proof, does not synchronize across hosts, cannot cancel already admitted requests, and does not itself prevent replay. Holder proofs and the separate replay store provide the HTTP replay check.
 
 ### Inspect and suspend an agent
 

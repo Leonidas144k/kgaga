@@ -9,7 +9,7 @@ Kgaga is AFROSOFT's agent identity and security project. Preserve the Go core an
 - [ ] Build, vet, race-test and review migration from v0.1; do not publish until green.
 - [x] Implement initial HTTP request limit (1 MiB), read errors, header/read/idle timeouts, matching JWKS key and upstream URL checks; verify in CI.
 - [x] Add regression tests for malformed MCP calls, mismatched headers, denied scopes, invalid/expired signatures and default deny; execution pending CI.
-- [ ] Threat model: malicious agents, untrusted MCP servers, token theft and replay, policy bypass, leaked secrets, compromised key storage and operator error. Treat stdio as experimental until authenticated and fail-closed.
+- [x] Initial threat model documented; mitigations and independent review remain open. Treat stdio as experimental until authenticated and fail-closed.
 
 ## v0.3.0 — identity
 
@@ -47,8 +47,12 @@ Holder confirmation in passports, immutable registered agent public key, strict 
 
 ### Identity increment 6
 
-Operator-issued single-use enrolment challenges, holder signatures over full proposed registration, expiry, replay rejection, concurrency tests and CLI lifecycle coverage. This is possession at enrolment, not independent workload or hardware attestation. Existing holder-bound identities remain compatible. Delegation and external attestation pending; validation pending.
+Operator-issued single-use enrolment challenges, holder signatures over full proposed registration, expiry, replay rejection, concurrency tests and CLI lifecycle coverage. This is possession at enrolment, not independent workload or hardware attestation. Existing holder-bound identities remain compatible. Enrollment CI and local lifecycle passed at 662eafd; independent workload attestation remains pending.
 
 ### Identity increment 7
 
-One-hop issuer-mediated delegation with explicit parent scope, signed parent grant, exact child holder binding, same owner/audience, permission subset, bounded expiry and parent lifecycle checks. Separate JWT type prevents old verifiers accepting the new format. Reusable grants are not independently revocable; parent revocation disables descendants. No nested delegation. Tests pending CI and local validation. Independent workload attestation remains unimplemented.
+One-hop issuer-mediated delegation with explicit parent scope, signed parent grant, exact child holder binding, same owner/audience, permission subset, bounded expiry and parent lifecycle checks. Separate JWT type prevents old verifiers accepting the new format. Reusable grants are not independently revocable; parent revocation disables descendants. No nested delegation. Local lifecycle, race tests, vet, build and both GitHub CI runs passed at 662eafd. Independent workload attestation remains unimplemented.
+
+## Release review
+
+See [release checklist](RELEASE_CHECKLIST.md), [threat model](THREAT_MODEL.md) and [architecture](ARCHITECTURE.md). Do not confuse completion of initial identity implementation with readiness to operate a security boundary. Prioritize safe request forwarding and policy semantics before an external pilot.
