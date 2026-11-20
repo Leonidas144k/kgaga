@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.5.0 vault development
 
+- Add structured correlated Vault usage and operator audit events with checked intent writes and fail-closed dispatch/release on writer errors. Durable and tamper-evident Ledger remains future work.
+
 - Add operator-only version-pinned HashiCorp KV v2 HTTPS imports via a provider interface. Imported credentials remain staged and require local activation; no live fetch or automatic provider revocation propagation.
 
 - Add staged/active credential lifecycle with explicit activation, monotonic rotation, revocation, authenticated persistent state and live gateway checks. Existing records require activation; pinned policies do not automatically advance.

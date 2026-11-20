@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Leonidas144k/kgaga/internal/audit"
 	"github.com/Leonidas144k/kgaga/internal/mcp"
 	"github.com/Leonidas144k/kgaga/internal/passport"
 	"github.com/Leonidas144k/kgaga/internal/policy"
@@ -291,17 +292,38 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		var secret []byte
 		var leaseDeadline time.Time
 		var selection policy.VaultSelection
+		var event audit.Event
+		// Return generic errors; audit failures must never cause a fallback
+		// to the ordinary non-Vault gateway.
+		writeAudit:=func(phase string,status int) error {
+			if broker==nil { return nil }
+			event.Phase,event.Status=phase,status
+			return broker.audit.Record(event)
+		}
+		auditUnavailable:=func(){
+			if isMCP { writeMCPError(w,503,-32603,"vault audit unavailable") } else { http.Error(w,"vault audit unavailable",503) }
+		}
 		if broker!=nil {
-			lease,err:=broker.credential(claims,audience,targetURL,r,mcpInfo)
+			id,e:=audit.NewID()
+			if e!=nil { auditUnavailable(); return }
+			event=audit.Event{AttemptID:id,Action:"credential_use",Actor:"agent",AgentID:claims.AgentID,Owner:claims.Owner,PassportID:claims.ID,Audience:audience,VaultID:broker.id,Method:r.Method}
+			if e:=writeAudit("attempt",0); e!=nil { auditUnavailable(); return }
+			lease,err:=broker.credential(claims,audience,targetURL,r,mcpInfo,&event)
 			if err!=nil {
 				status:=http.StatusServiceUnavailable
 				if errors.Is(err,policy.ErrVaultDenied) || errors.Is(err,vault.ErrInactiveVersion) { status=http.StatusForbidden }
 				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault credential unavailable or denied"})
+				phase:="credential_unavailable"
+				if status==403 { phase="denied" }
+				if e:=writeAudit(phase,status); e!=nil { auditUnavailable(); return }
 				if isMCP { writeMCPError(w,status,-32603,"vault credential unavailable or denied") } else { http.Error(w,"vault credential unavailable or denied",status) }
 				return
 			}
 			defer lease.close()
 			selection=lease.selection
+			// Record intent, not proof that any network bytes were sent.
+			// Perform final live checks AFTER writing to the sink.
+			if e:=writeAudit("dispatch_intent",0); e!=nil { auditUnavailable(); return }
 			// Storage lookup is potentially slow. Repeat live checks after
 			// the lookup so a stale decision cannot authorize injection.
 			e:=checkLive(rawToken,audience,trust,reg,store)
@@ -311,6 +333,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			if e==nil { secret,leaseDeadline,e=lease.consume(time.Now()) }
 			if e!=nil {
 				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault final admission denied"})
+				if e:=writeAudit("denied_before_dispatch",403); e!=nil { auditUnavailable(); return }
 				if isMCP { writeMCPError(w,403,-32603,"vault final admission denied") } else { http.Error(w,"vault final admission denied",403) }
 				return
 			}
@@ -319,6 +342,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		response,err:=exchange(r,target,transport,claims,bodyBytes,mcpInfo,cfg.RedactSecrets,secret,leaseDeadline)
 		if err!=nil {
 			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"upstream response rejected or unavailable"})
+			if e:=writeAudit("exchange_failed_or_rejected",502); e!=nil { auditUnavailable(); return }
 			if isMCP { writeMCPError(w,http.StatusBadGateway,-32603,"upstream response rejected") } else { http.Error(w,"upstream response rejected",http.StatusBadGateway) }
 			return
 		}
@@ -327,14 +351,26 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		if audience!="" {
 			if e:=checkLive(rawToken,audience,trust,reg,store); e!=nil {
 				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"credential lifecycle check failed before response"})
+				if e:=writeAudit("response_withheld",403); e!=nil { auditUnavailable(); return }
 				if isMCP { writeMCPError(w,403,-32603,"response access denied") } else { http.Error(w,"response access denied",403) }
 				return
 			}
 		}
 		if broker!=nil && (broker.checkActive(selection)!=nil || !time.Now().Before(leaseDeadline)) {
 			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault lifecycle or lease check failed before response"})
+			if e:=writeAudit("response_withheld",403); e!=nil { auditUnavailable(); return }
 			if isMCP { writeMCPError(w,403,-32603,"response access denied") } else { http.Error(w,"response access denied",403) }
 			return
+		}
+		if broker!=nil {
+			// This event records intended release, not delivery or business success.
+			if e:=writeAudit("response_release_intent",response.status); e!=nil { auditUnavailable(); return }
+			// Logging may block. Recheck after the sink accepts the intent.
+			if checkLive(rawToken,audience,trust,reg,store)!=nil || broker.checkActive(selection)!=nil || !time.Now().Before(leaseDeadline) {
+				if e:=writeAudit("response_withheld",403); e!=nil { auditUnavailable(); return }
+				if isMCP { writeMCPError(w,403,-32603,"response access denied") } else { http.Error(w,"response access denied",403) }
+				return
+			}
 		}
 		emitAudit(AuditEvent{AgentID:claims.AgentID,Owner:claims.Owner,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"ALLOW",Scopes:claims.Scopes})
 		for key,values:=range response.headers { for _,value:=range values { w.Header().Add(key,value) } }

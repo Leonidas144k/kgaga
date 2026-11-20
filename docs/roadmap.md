@@ -136,3 +136,7 @@ Increment 6 passed repeated local lease/injection tests, regression lifecycle an
 ### Vault increment 8
 
 Increment 7 passed repeated local lifecycle/injection tests and CI at 0c4bccf (44748823740). Increment 8 adds a provider-independent operator import interface, concrete HashiCorp KV v2 adapter (exact remote version/field, verified TLS, no redirects, bounded strict response, deletion metadata checks), staged immutable publication and synthetic HTTPS/negative tests. Validation pending. Point-in-time import only; additional providers, native dynamic issuance, source audit and live provider revocation remain open.
+
+### Vault increment 9
+
+Increment 8 passed repeated local provider/policy/vault/injection tests and CI at 2d4aafb (44750632476). Increment 9 adds correlated structured credential-use and operator audit, fixed metadata-only phases, checked intent writes before dispatch/mutation/release, sink failure tests and post-write live checks. Validation pending. No durable or tamper-evident Ledger, verified operator identity or proof of delivery/business success.

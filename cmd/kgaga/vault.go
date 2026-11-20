@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/Leonidas144k/kgaga/internal/audit"
 	"github.com/Leonidas144k/kgaga/internal/vault"
 )
 
@@ -36,9 +37,11 @@ func runVaultOperator(command string,args []string) {
 	if command!="vault-import" && (*providerOrigin!="" || *providerCA!="" || *providerMount!="" || *providerPath!="" || *providerField!="" || *providerVersion!=0) { log.Fatal("provider flags only valid for vault-import") }
 	if command=="vault-init" {
 		if *name!="" || *version!=0 || *start!=0 || *end!=0 { log.Fatal("record flags not valid for vault-init") }
-		if err:=vault.Init(*dir,id); err!=nil { log.Fatal("vault initialization failed") }
-		s,err:=vault.Open(*dir,id); if err!=nil { log.Fatal("vault initialization failed") }
-		if err:=s.CreateMasterKey(*keyFile,keyID); err!=nil { log.Fatal("master key creation failed; inspect partial initialization offline") }
+		runAuditedVault(audit.Event{Action:command,Actor:"local_operator",VaultID:*vid},func()error{
+			if err:=vault.Init(*dir,id); err!=nil { return err }
+			s,err:=vault.Open(*dir,id); if err!=nil { return err }
+			return s.CreateMasterKey(*keyFile,keyID)
+		})
 		fmt.Println("Initialized operator vault and external master key")
 		return
 	}
@@ -48,13 +51,14 @@ func runVaultOperator(command string,args []string) {
 	} else if *start!=0 || *end!=0 { log.Fatal("validity flags only accepted by vault-put or vault-import") }
 	s,err:=vault.Open(*dir,id); if err!=nil { log.Fatal("vault open failed") }
 	m,err:=s.OpenManaged(*keyFile,keyID); if err!=nil { log.Fatal("master key open failed") }
+	event:=audit.Event{Action:command,Actor:"local_operator",VaultID:*vid,Name:*name,Version:*version}
 	switch command {
 	case "vault-activate":
-		if err:=m.Activate(*name,*version); err!=nil { log.Fatal("vault activation failed") }
+		runAuditedVault(event,func()error{return m.Activate(*name,*version)})
 		fmt.Println("Activated credential version; lower versions retired")
 		return
 	case "vault-revoke":
-		if err:=m.RevokeVersion(*name,*version); err!=nil { log.Fatal("vault revocation failed") }
+		runAuditedVault(event,func()error{return m.RevokeVersion(*name,*version)})
 		fmt.Println("Credential version revoked or already retired")
 		return
 	case "vault-put", "vault-import":
@@ -69,11 +73,26 @@ func runVaultOperator(command string,args []string) {
 	if command=="vault-import" {
 		source,err:=vault.NewHashiCorpKV2(vault.HashiCorpKV2Config{Origin:*providerOrigin,CAFile:*providerCA,Mount:*providerMount,Path:*providerPath,Field:*providerField,Version:*providerVersion})
 		if err!=nil { clear(token); log.Fatal("invalid external provider configuration") }
-		if err:=m.ImportBearer(context.Background(),source,token,*name,*version,*start,*end); err!=nil { clear(token); log.Fatal("external credential import failed") }
+		event.Provider,event.ProviderVersion="hashicorp_kv_v2",*providerVersion
+		runAuditedVault(event,func()error{ defer clear(token); return m.ImportBearer(context.Background(),source,token,*name,*version,*start,*end) })
 		clear(token)
 		fmt.Println("Imported immutable staged credential; activation required")
 		return
 	}
-	if err:=m.PutBearer(*name,*version,token,*start,*end); err!=nil { clear(token); log.Fatal("vault record publication failed") }
+	runAuditedVault(event,func()error{ defer clear(token); return m.PutBearer(*name,*version,token,*start,*end) })
 	fmt.Println("Published staged immutable encrypted vault record")
+}
+
+// This records attempted operations, not a verified human identity. Failed
+// or ambiguous mutations are never automatically retried or rolled back.
+func runAuditedVault(event audit.Event,operation func()error) {
+	id,err:=audit.NewID()
+	if err!=nil { log.Fatal("vault audit unavailable; operation not attempted") }
+	event.AttemptID,event.Phase=id,"operator_intent"
+	if err:=audit.Default().Record(event); err!=nil { log.Fatal("vault audit unavailable; operation not attempted") }
+	err=operation()
+	event.Phase="operator_completed"
+	if err!=nil { event.Phase="operator_failed_or_ambiguous" }
+	if e:=audit.Default().Record(event); e!=nil { log.Fatal("vault audit unavailable after operation; inspect state offline before retry") }
+	if err!=nil { log.Fatal("vault operation failed or publication ambiguous; inspect state before retry") }
 }

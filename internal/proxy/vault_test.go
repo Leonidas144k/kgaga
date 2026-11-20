@@ -3,6 +3,8 @@ package proxy
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"encoding/pem"
 	"fmt"
 	"net/http"
@@ -14,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Leonidas144k/kgaga/internal/audit"
 	"github.com/Leonidas144k/kgaga/internal/keyring"
 	"github.com/Leonidas144k/kgaga/internal/passport"
 	"github.com/Leonidas144k/kgaga/internal/policy"
@@ -21,6 +24,15 @@ import (
 	"github.com/Leonidas144k/kgaga/internal/revocation"
 	"github.com/Leonidas144k/kgaga/internal/vault"
 )
+
+type auditFixture struct {
+	buf bytes.Buffer
+	fail string
+}
+func (a *auditFixture) Write(p []byte)(int,error) {
+	if a.fail!="" && bytes.Contains(p,[]byte(`"phase":"`+a.fail+`"`)) { return 0,errors.New("synthetic audit sink failure") }
+	return a.buf.Write(p)
+}
 
 func TestVaultCredentialInjection(t *testing.T) {
 	dir:=t.TempDir()
@@ -104,6 +116,8 @@ func TestVaultCredentialInjection(t *testing.T) {
 	raw:=fmt.Sprintf("version: \"1\"\nvault_id: \"%s\"\ngrants:\n",id)+grant("/api","GET","","","read",1)+grant("/api/rotated","GET","","","read",2)+grant("/api/missing","GET","","","read",9)+grant("/api/future","GET","","","read",3)+grant("/api/legacy","GET","","","read",4)+grant("/mcp","POST","tools/call","search","mcp:tool:search",1)
 	if err:=os.WriteFile(policyPath,[]byte(raw),0600); err!=nil { t.Fatal(err) }
 	broker,err:=OpenVaultGateway(policyPath,vdir,id,keyPath,hex.EncodeToString(kid[:])); if err!=nil { t.Fatal(err) }
+	sink:=&auditFixture{}
+	broker.audit=audit.NewRecorder(sink)
 	cfg:=&policy.Config{Version:"2",RedactSecrets:true,MCP:policy.MCPPolicy{AllowedTools:[]string{"search","read_file"}},Rules:[]policy.Rule{{PathPrefix:"/api",AllowedScopes:[]string{"read"},AllowedMethods:[]string{"GET"}}}}
 	opt:=UpstreamTLSOptions{CAFile:ca}
 	h,err:=NewHandlerWithVault(up.URL,trust,cfg,"api",rev,reg,replay,broker,opt); if err!=nil { t.Fatal(err) }
@@ -152,4 +166,26 @@ func TestVaultCredentialInjection(t *testing.T) {
 	mode.Store(7)
 	run(h,"agent","/api","GET","",scopes,false,403,false)
 	run(h,"agent","/api/rotated","GET","",scopes,false,204,true)
+	sink.fail="dispatch_intent"
+	run(h,"agent","/api/rotated","GET","",scopes,false,503,false)
+	sink.fail="response_release_intent"
+	run(h,"agent","/api/rotated","GET","",scopes,false,503,true)
+	// Deliberately do not log the supplied client auth, proof, request
+	// body, query or the selected bearer, even when an upstream echoes it.
+	rawAudit:=sink.buf.String()
+	for _,s:=range []string{secret,"different-version-not-selected","attacker-supplied","protected response","?x=1","X-Kgaga-Proof"} {
+		if strings.Contains(rawAudit,s) { t.Fatal("sensitive input in structured audit") }
+	}
+	phases:=map[string]int{}
+	attempts:=map[string]bool{}
+	for _,line:=range strings.Split(strings.TrimSuffix(rawAudit,"\n"),"\n") {
+		var e audit.Event
+		if err:=json.Unmarshal([]byte(line),&e); err!=nil || e.Schema!="kgaga.vault.audit.v1" || e.VaultID!=id || e.Actor!="agent" || e.AgentID=="" || e.PassportID=="" || e.Audience!="api" { t.Fatal("invalid usage audit metadata") }
+		if e.Phase=="attempt" { if attempts[e.AttemptID] { t.Fatal("duplicate attempt") }; attempts[e.AttemptID]=true } else if !attempts[e.AttemptID] { t.Fatal("uncorrelated audit event") }
+		if e.Phase=="dispatch_intent" && (e.Name!="token" || e.Version==0 || e.Origin!=up.URL || e.Target=="") { t.Fatal("missing selected credential metadata") }
+		phases[e.Phase]++
+	}
+	for _,phase:=range []string{"attempt","denied","dispatch_intent","exchange_failed_or_rejected","response_withheld","response_release_intent"} {
+		if phases[phase]==0 { t.Fatalf("missing phase %s",phase) }
+	}
 }
