@@ -1,6 +1,6 @@
 # Kgaga Vault — cryptographic architecture
 
-Status: increment 003 development foundation. Local immutable encrypted records and external-file KEK custody, with envelope encryption. No secret-facing CLI, agent authorization or gateway injection yet.
+Status: increment 004 development foundation. Local immutable encrypted records, external-file KEK custody, envelope encryption and a separate Vault access policy evaluator. No gateway enforcement or injection yet.
 
 ## Goal and separation of duties
 
@@ -27,10 +27,32 @@ ManagedStore.Put generates a fresh DEK and random DEK identity for every attempt
 
 Wrapping uses random 96-bit nonces under a shared KEK. Operators must limit each KEK to at most 1,000,000 wrap attempts across all processes, including failed publications, and stop before that ceiling; enforcement and safe rotation are not yet implemented. This is an operational limit, not an enforced quota. Use only synthetic data. No automated deletion, rotation or rollback recovery before lifecycle behavior is implemented. External KMS/HSM custody remains later work.
 
-Access and injection (increments 004–005): deny by default and bind decisions to verified identity, exact audience, service origin, method, path/tool, credential version and authorized injection target. No raw agent retrieval API by default. Revalidate live credentials at dispatch. Inspect responses for exact injected secret values as well as existing heuristics; this cannot guarantee protection against arbitrary upstream transformations or collusion.
+Access policy (increment 004): separate strict YAML version "1", top-level expected vault_id (32 lowercase hex characters, nonzero), and grants (0–256). Maximum policy file size 128 KiB. Every grant contains exactly agent_id, owner, audience, origin, method, target, mcp_method, tool, required_scopes, secret_name and secret_version. All fields explicit. The immutable policy selection is keyed on exact identity/owner/audience/HTTPS origin/HTTP method/literal target/MCP method/tool. No query, wildcard, prefix fallback, implicit admin override, delegated credentials or agent-selected secret. Require all literal scopes; tools/call additionally requires its exact mcp:tool:<name> scope. REST requires empty MCP fields. Duplicate selectors fail configuration, including selectors with different scopes or secret versions. Return only operator-selected vault ID, secret name and pinned positive version. No header selection in the schema; planned injection is fixed Authorization bearer credentials only.
+
+Example policy (illustrative, not loaded by the gateway yet):
+```yaml
+version: "1"
+vault_id: "1234567890abcdef1234567890abcdef"
+grants:
+  - agent_id: "agent-a"
+    owner: "owner-a"
+    audience: "backend"
+    origin: "https://backend.example"
+    method: "POST"
+    target: "/api/payments"
+    mcp_method: ""
+    tool: ""
+    required_scopes: ["payments:write", "vault:use"]
+    secret_name: "service-token"
+    secret_version: 2
+```
+
+The evaluator requires a trusted context supplied by future gateway code after passport verification, holder proof, live registry/trust/revocation/delegation, replay and ordinary gateway authorization. It performs additional identity, holder-binding shape and validity checks, but does not authenticate a claims object by itself; its result is metadata, not a cryptographic capability. No store access or gateway behavior is added by increment 004. Policy files are trusted operator state and must be protected; changes require reparsing/restart. Empty grants or missing exact match deny Vault access.
+
+Injection (increment 005): wire the policy to an explicit managed gateway mode. Require exact configured upstream HTTPS origin and configured vault identity; no downgrade or bypass via unconfigured routes, arbitrary headers or agent-controlled destinations. Resolve only the policy-selected credential. Revalidate live credentials at dispatch and inspect responses for exact injected values in addition to existing heuristics; arbitrary upstream transformations and collusion remain residual risks.
 
 Later: short-lived credentials, versioning, external secret managers, audit, adversarial testing and release review.
 
 ## Threat model and operational limits
 
-Trust the operator, operating system and cryptographic randomness. A stolen ciphertext alone should not reveal secret plaintext without its data key. A stolen key can decrypt the matching record. Metadata is authenticated, not necessarily confidential. Ciphertext length reveals approximate secret length. Rollback protection, durable transaction recovery, production key custody, storage capacity management, memory/runtime exposure, policy authorization and credential injection are future work. Exclusive publication and mode checks are implemented under protected-filesystem assumptions, not a sandbox. The foundation is not an operational secret manager and must not hold live credentials. Do not publish a production assurance claim based on primitive-level tests.
+Trust the operator, operating system and cryptographic randomness. A stolen ciphertext alone should not reveal secret plaintext without its data key. A stolen key can decrypt the matching record. Metadata is authenticated, not necessarily confidential. Ciphertext length reveals approximate secret length. Rollback protection, durable transaction recovery, production key custody, storage capacity management, memory/runtime exposure, gateway enforcement of Vault policy and credential injection are future work. Exclusive publication and mode checks are implemented under protected-filesystem assumptions, not a sandbox. The foundation is not an operational secret manager and must not hold live credentials. Do not publish a production assurance claim based on primitive-level tests.

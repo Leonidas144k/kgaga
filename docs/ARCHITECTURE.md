@@ -51,3 +51,5 @@ Gateway merged at 2fcecf6; post-merge CI passed. The separate internal/vault cry
 Vault increment 002 adds the isolated operator-only immutable encrypted record store. Caller-owned keys remain outside storage; no agent or gateway integration. See VAULT_ARCHITECTURE.md for trust and recovery constraints.
 
 Vault increment 003 introduces managed envelope encryption with an external operator-held KEK file, per-attempt random DEKs and immutable KGE1 records. The KEK file is plaintext under separate local custody, not KMS/HSM-backed. No agent-facing secret API or changes to gateway forwarding.
+
+Vault increment 004 adds a separate strict, immutable Vault policy evaluator in internal/policy. It selects metadata for an exact holder-bound, nondelegated agent operation after trusted gateway admission. It does not authenticate claims on its own, read secrets or alter existing gateway behavior; credential injection is the next increment.

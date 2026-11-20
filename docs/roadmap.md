@@ -116,3 +116,7 @@ Increment 1 passed ten local race-test repetitions, full lifecycle and CI at 15b
 ### Vault increment 3
 
 Increment 2 passed local repeated race tests and CI at a2689b1 (44719713905). Increment 3 adds external private KEK creation/loading, per-attempt random DEKs, domain-separated AES-GCM wrapping, immutable managed KGE1 records and restart/tamper/custody/concurrent publication tests. Validation pending. No live secrets, enforced KEK usage counter, automatic rotation, KMS or agent access yet.
+
+### Vault increment 4
+
+Increment 3 passed repeated local race tests, full lifecycle and CI at e344718 (44721889128). Increment 4 adds strict separate YAML Vault policy, exact identity/owner/audience/HTTPS origin/method/target/MCP tool grants, all-scopes checks, pinned secret versions and vault identity, default-deny immutable evaluation, invalid configuration and scope/operation isolation tests. Validation pending. No gateway wiring, secret reads, delegated Vault grants or injection yet.

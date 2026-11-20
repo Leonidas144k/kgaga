@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.5.0 vault development
 
+- Add strict deny-by-default Vault access policy evaluator with exact operation and agent grants, literal required scopes, pinned secret metadata and no delegated access. Gateway enforcement follows separately.
+
 - Add managed envelope encryption with separate local operator KEK custody, fresh DEKs, authenticated wrapping and single-file immutable publication. No automatic key rotation or gateway access.
 
 - Add private local immutable encrypted record storage with explicit identity, bounded reads, exclusive publication and restart/concurrency regression tests. Caller-managed data keys only.
