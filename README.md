@@ -78,7 +78,13 @@ The examples below assume `kgaga` is on your `PATH`. To run it directly from the
 
 ### Mint an Agent Passport
 
-Run `kgaga init` and then `kgaga revocations-init` once in a dedicated new directory before these examples. For an existing v2 development installation, only initialize the revocation store once; do not regenerate keys. Generate a short-lived signed token bound to an explicit service audience, an agent, an owner, and permission scopes. Protect the private signing key; its holder can mint any identity or scope.
+Run `kgaga init`, `kgaga revocations-init`, and `kgaga agents-init` once in a dedicated new directory. Existing installations must initialize only missing stores as part of an intentional first-time migration, not recreate lost state or regenerate keys. Register an agent before minting:
+
+```bash
+kgaga agent-register --agent support-bot --owner ops@company.com --scopes mcp:tool:search,db:read --audiences support-api
+```
+
+Generate a short-lived signed token bound to an explicit service audience, an agent, an owner, and permission scopes. Protect the signing key and state; a key holder can sign claims outside the CLI, so registry checks at verification are mandatory.
 
 **Linux and macOS (Bash)**
 
@@ -118,6 +124,15 @@ kgaga revoke --id <jti>
 Use the actual 32-character lowercase hexadecimal ID. Subsequent CLI verification fails, and gateway requests using the revoked passport return HTTP 403. A missing or replaced store fails closed (HTTP 503 on the gateway). All three commands (`verify`, `proxy`, and `revoke`) must use the same local directory, configurable via `--revocations`. The default is `kgaga-revocations` relative to the working directory.
 
 Keep the store and its parent directory under trusted operator control, backed up, and outside source control. Do not recreate lost revocation state; restore it from trusted backup or retire the affected credentials. Records are retained indefinitely in this increment. This single-host design is not tamper-proof, does not synchronize across hosts, cannot cancel already admitted requests, and does not prevent replay of an unrevoked bearer token.
+
+### Inspect and suspend an agent
+
+```bash
+kgaga agent-inspect --agent support-bot
+kgaga agent-suspend --agent support-bot
+```
+
+Mint, verify and the audience-bound HTTP gateway require a registered agent with the exact owner, an allowed audience and a subset of allowed scopes. Suspension is permanent for that ID in this increment, blocks existing passports and prevents new issuance through the CLI. There is no resume or editing command: issue a fresh identity when needed. Use the same registry directory for all commands (default `kgaga-agents`, override with `--registry`). The store is designed for a trusted operator on a single host with hard-link support; protect all directories, never commit them, and do not recreate lost state. A running gateway detects missing/replaced registry directories. There is no distributed synchronization, independent owner proof, power-loss guarantee or cancellation of in-flight requests. The low-level signer remains a signing primitive; it does not authorize agents.
 
 ## Migration from Pangolin v0.1
 

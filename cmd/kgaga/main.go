@@ -15,6 +15,7 @@ import (
 	"github.com/Leonidas144k/kgaga/internal/policy"
 	"github.com/Leonidas144k/kgaga/internal/proxy"
 	"github.com/Leonidas144k/kgaga/internal/revocation"
+	"github.com/Leonidas144k/kgaga/internal/registry"
 )
 
 func main() {
@@ -49,8 +50,53 @@ func main() {
 		}
 		fmt.Println("Initialized Kgaga root keys (kgaga.key, kgaga.pub) and kgaga.yaml")
 
+	case "agents-init":
+		fs := flag.NewFlagSet("agents-init", flag.ExitOnError)
+		dir := fs.String("registry",registry.DefaultDir,"Agent registry directory")
+		fs.Parse(os.Args[2:])
+		if err:=registry.Init(*dir); err!=nil { log.Fatalf("initialize registry failed: %v",err) }
+		fmt.Println("Initialized agent registry")
+
+	case "agent-register":
+		fs := flag.NewFlagSet("agent-register",flag.ExitOnError)
+		dir := fs.String("registry",registry.DefaultDir,"Agent registry directory")
+		id := fs.String("agent","","Agent identifier")
+		owner := fs.String("owner","","Owner identifier")
+		scopes := fs.String("scopes","","Comma-separated allowed scopes")
+		audiences := fs.String("audiences","","Comma-separated allowed audiences")
+		fs.Parse(os.Args[2:])
+		reg,err:=registry.Open(*dir)
+		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
+		if err:=reg.Register(registry.Agent{ID:*id,Owner:*owner,Scopes:strings.Split(*scopes,","),Audiences:strings.Split(*audiences,",")}); err!=nil { log.Fatalf("register agent failed: %v",err) }
+		fmt.Println("Agent registered:",*id)
+
+	case "agent-inspect":
+		fs := flag.NewFlagSet("agent-inspect",flag.ExitOnError)
+		dir := fs.String("registry",registry.DefaultDir,"Agent registry directory")
+		id := fs.String("agent","","Agent identifier")
+		fs.Parse(os.Args[2:])
+		reg,err:=registry.Open(*dir)
+		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
+		a,suspended,err:=reg.Get(*id)
+		if err!=nil { log.Fatalf("inspect agent failed: %v",err) }
+		if err:=json.NewEncoder(os.Stdout).Encode(struct{
+			registry.Agent
+			Suspended bool `json:"suspended"`
+		}{a,suspended}); err!=nil { log.Fatalf("write agent failed: %v",err) }
+
+	case "agent-suspend":
+		fs := flag.NewFlagSet("agent-suspend",flag.ExitOnError)
+		dir := fs.String("registry",registry.DefaultDir,"Agent registry directory")
+		id := fs.String("agent","","Agent identifier")
+		fs.Parse(os.Args[2:])
+		reg,err:=registry.Open(*dir)
+		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
+		if err:=reg.Suspend(*id); err!=nil { log.Fatalf("suspend agent failed: %v",err) }
+		fmt.Println("Agent suspended:",*id)
+
 	case "mint":
 		fs := flag.NewFlagSet("mint", flag.ExitOnError)
+		registryDir := fs.String("registry",registry.DefaultDir,"Agent registry directory")
 		agent := fs.String("agent", "default-agent", "Agent identifier")
 		owner := fs.String("owner", "ops@company.com", "Human or service owner")
 		scopes := fs.String("scopes", "db:read", "Comma-separated scopes")
@@ -58,6 +104,9 @@ func main() {
 		audience := fs.String("audience", "", "Required service identifier")
 		fs.Parse(os.Args[2:])
 
+		reg,err:=registry.Open(*registryDir)
+		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
+		if err:=reg.Authorize(*agent,*owner,strings.Split(*scopes,","),*audience); err!=nil { log.Fatalf("mint rejected: %v",err) }
 		token, err := passport.MintV2("kgaga.key", *agent, *owner, strings.Split(*scopes, ","), *audience, *ttl)
 		if err != nil {
 			log.Fatalf("mint failed: %v", err)
@@ -85,6 +134,7 @@ func main() {
 
 	case "verify":
 		fs := flag.NewFlagSet("verify", flag.ExitOnError)
+		registryDir := fs.String("registry",registry.DefaultDir,"Agent registry directory")
 		dir := fs.String("revocations", revocation.DefaultDir, "Revocation store directory")
 		audience := fs.String("audience", "", "Required service identifier")
 		fs.Parse(os.Args[2:])
@@ -107,12 +157,16 @@ func main() {
 		store, err := revocation.Open(*dir)
 		if err != nil { log.Fatalf("open revocation store failed: %v", err) }
 		if err := store.Check(claims.ID); err != nil { log.Fatalf("passport rejected: %v", err) }
+		reg,err:=registry.Open(*registryDir)
+		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
+		if err:=reg.Authorize(claims.AgentID,claims.Owner,claims.Scopes,*audience); err!=nil { log.Fatalf("passport rejected: %v",err) }
 		if err := json.NewEncoder(os.Stdout).Encode(claims); err != nil {
 			log.Fatalf("write claims failed: %v", err)
 		}
 
 	case "proxy":
 		fs := flag.NewFlagSet("proxy", flag.ExitOnError)
+		registryDir := fs.String("registry",registry.DefaultDir,"Agent registry directory")
 		dir := fs.String("revocations", revocation.DefaultDir, "Revocation store directory")
 		listen := fs.String("listen", "127.0.0.1:8080", "Address for Kgaga proxy to listen on")
 		target := fs.String("target", "http://localhost:3000", "Upstream backend or MCP server URL")
@@ -130,7 +184,9 @@ func main() {
 
 		store, err := revocation.Open(*dir)
 		if err != nil { log.Fatalf("open revocation store failed: %v", err) }
-		handler, err := proxy.NewHandlerForAudience(*target, pubKey, cfg, *audience, store)
+		reg,err:=registry.Open(*registryDir)
+		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
+		handler, err := proxy.NewHandlerForAudience(*target, pubKey, cfg, *audience, store, reg)
 		if err != nil {
 			log.Fatalf("proxy setup failed: %v", err)
 		}
@@ -189,6 +245,10 @@ func printUsage() {
 Usage:
   kgaga init                                                Generate root Ed25519 keys & kgaga.yaml
   kgaga mint --agent <id> --owner <email> --scopes <s1,s2> --audience <service>  Mint an Agent Passport
+  kgaga agents-init                                         Initialize the agent registry once
+  kgaga agent-register --agent <id> --owner <id> --scopes <s1,s2> --audiences <a1,a2>
+  kgaga agent-inspect --agent <id>                            Inspect a registered agent
+  kgaga agent-suspend --agent <id>                            Permanently suspend an agent ID
   kgaga revocations-init                                    Initialize the local revocation store once
   kgaga revoke --id <jti>                                    Revoke a passport
   kgaga verify --audience <service>                          Verify a passport from stdin and check revocation

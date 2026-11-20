@@ -13,6 +13,7 @@ import (
 	"github.com/Leonidas144k/kgaga/internal/passport"
 	"github.com/Leonidas144k/kgaga/internal/policy"
 	"github.com/Leonidas144k/kgaga/internal/revocation"
+	"github.com/Leonidas144k/kgaga/internal/registry"
 )
 
 func TestAudienceGateway(t *testing.T) {
@@ -43,9 +44,15 @@ func TestAudienceGateway(t *testing.T) {
 	if err:=revocation.Init(storePath); err!=nil { t.Fatal(err) }
 	store,err:=revocation.Open(storePath)
 	if err!=nil { t.Fatal(err) }
-	if _,err := NewHandlerForAudience(up.URL,key,cfg,"service-a",nil); err==nil { t.Fatal("accepted missing revocation store") }
-	if _,err := NewHandlerForAudience(up.URL,key,cfg,"",store); err == nil { t.Fatal("accepted empty audience") }
-	h,err := NewHandlerForAudience(up.URL,key,cfg,"service-a",store)
+	regPath:=filepath.Join(dir,"agents")
+	if err:=registry.Init(regPath); err!=nil { t.Fatal(err) }
+	reg,err:=registry.Open(regPath)
+	if err!=nil { t.Fatal(err) }
+	if err:=reg.Register(registry.Agent{ID:"agent",Owner:"owner",Scopes:[]string{"db:read"},Audiences:[]string{"service-a"}}); err!=nil { t.Fatal(err) }
+	if _,err:=NewHandlerForAudience(up.URL,key,cfg,"service-a",store,nil); err==nil { t.Fatal("accepted absent registry") }
+	if _,err := NewHandlerForAudience(up.URL,key,cfg,"service-a",nil,reg); err==nil { t.Fatal("accepted missing revocation store") }
+	if _,err := NewHandlerForAudience(up.URL,key,cfg,"",store,reg); err == nil { t.Fatal("accepted empty audience") }
+	h,err := NewHandlerForAudience(up.URL,key,cfg,"service-a",store,reg)
 	if err != nil { t.Fatal(err) }
 	for _,tc := range []struct{ name, token string; duplicate bool; want int }{
 		{"wrong audience",mint("service-b"),false,403},
@@ -81,9 +88,20 @@ func TestAudienceGateway(t *testing.T) {
 	check(raw,204)
 	if err:=store.Revoke(claims.ID); err!=nil { t.Fatal(err) }
 	check(raw,403)
+	for _,a:=range []struct{id,owner,scope string}{{"unknown","owner","db:read"},{"agent","other","db:read"},{"agent","owner","db:write"}} {
+		raw,err:=passport.MintV2(priv,a.id,a.owner,[]string{a.scope},"service-a",time.Minute)
+		if err!=nil { t.Fatal(err) }
+		check(raw,403)
+	}
+	fresh:=mint("service-a")
+	check(fresh,204)
+	if err:=reg.Suspend("agent"); err!=nil { t.Fatal(err) }
+	check(fresh,403)
+	if err:=os.Rename(regPath,regPath+"-backup"); err!=nil { t.Fatal(err) }
+	check(fresh,503)
 	if err:=os.Rename(storePath,storePath+"-backup"); err!=nil { t.Fatal(err) }
 	check(mint("service-a"),503)
-	if calls.Load()!=2 { t.Fatalf("upstream calls %d want 2",calls.Load()) }
+	if calls.Load()!=3 { t.Fatalf("upstream calls %d want 3",calls.Load()) }
 	w:=httptest.NewRecorder()
 	h.ServeHTTP(w,httptest.NewRequest("GET","/.well-known/jwks.json",nil))
 	var jwks passport.JWKS

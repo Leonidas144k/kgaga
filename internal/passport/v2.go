@@ -50,7 +50,8 @@ func ValidateAudience(audience string) error {
 	return nil
 }
 
-func validateIdentity(agent, owner string, scopes []string) error {
+// ValidateIdentity validates identity and scope claim syntax.
+func ValidateIdentity(agent, owner string, scopes []string) error {
 	if !safeValue(agent, 256) || !safeValue(owner, 256) {
 		return errors.New("invalid agent or owner identifier")
 	}
@@ -72,7 +73,7 @@ func MintV2(privPath, agent, owner string, scopes []string, audience string, ttl
 	if err := ValidateAudience(audience); err != nil {
 		return "", err
 	}
-	if err := validateIdentity(agent, owner, scopes); err != nil {
+	if err := ValidateIdentity(agent, owner, scopes); err != nil {
 		return "", err
 	}
 	if ttl < time.Second || ttl > MaxTTL {
@@ -152,7 +153,7 @@ func VerifyV2(raw string, key ed25519.PublicKey, audience string) (*AgentClaims,
 	if err != nil || len(id) != 16 || strings.ToLower(c.ID) != c.ID {
 		return nil, errors.New("invalid passport identifier")
 	}
-	if err := validateIdentity(c.AgentID, c.Owner, c.Scopes); err != nil {
+	if err := ValidateIdentity(c.AgentID, c.Owner, c.Scopes); err != nil {
 		return nil, err
 	}
 	return c, nil

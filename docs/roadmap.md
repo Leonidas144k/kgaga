@@ -31,4 +31,8 @@ Implemented strict v2 issuance and verification, key thumbprints, unique credent
 
 ### Identity increment 2
 
-Local persistent passport revocation: explicit store initialization, exclusive per-ID markers, CLI revoke, check on CLI verify and audience-bound gateway, fail closed on store errors, and regression tests. No database or new dependencies. Distributed state, pruning, backups, power-loss durability, trusted operator access and replay resistance require further design. Tests pending CI.
+Local persistent passport revocation: explicit store initialization, exclusive per-ID markers, CLI revoke, check on CLI verify and audience-bound gateway, fail closed on store errors, and regression tests. No database or new dependencies. Distributed state, pruning, backups, power-loss durability, trusted operator access and replay resistance require further design. Increment 2 CI and local smoke test passed at 81f16e3.
+
+### Identity increment 3
+
+Local immutable agent registry, registration, inspection, permanent suspension, mandatory registry authorization at CLI mint/verify and v2 gateway, and tests. Operator filesystem permissions remain the trust boundary; no resume, record editing, distributed state or independent attestation. Pending validation.
