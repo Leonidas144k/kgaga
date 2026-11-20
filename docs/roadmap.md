@@ -96,3 +96,7 @@ Verified TLS 1.2+ upstream connections by default, optional private trust roots 
 ### Gateway increment 9
 
 Closed v2 credential wire schema and canonical proof signature encoding; final live authorization/proof freshness rechecks before dispatch in both transports; concurrent replay, in-flight revocation and signed ambiguity regression tests; short envelope fuzzing and repeated replay tests in CI. Increment 8 passed local and CI at 5784d51. Increment 9 validation pending; external security assurance and operational release gates remain open.
+
+### Gateway release review
+
+All nine implementation increments validated locally and in CI at 8bbfe0f (CI 44711337360). Local fuzz run: 21,532 executions, 27 new interesting inputs, no failure. Release-review documentation reconciles current architecture and threat model. Dependency/toolchain vulnerability review, internal preview approval, merge and main CI remain open. No tag or distribution approval.
