@@ -124,3 +124,7 @@ Increment 3 passed repeated local race tests, full lifecycle and CI at e344718 (
 ### Vault increment 5
 
 Increment 4 passed repeated local policy/vault tests and CI at b6a5079 (44727758123). Increment 5 adds opt-in mandatory Vault gateway authorization, independent identity/origin binding, fixed bearer injection over verified TLS, fresh admission checks, exact response token blocking and operator-only init/put CLI. Synthetic HTTPS integration and negative tests; validation pending. No production credentials, enforced KEK wrapping quota, general DLP, dynamic leases or rotation.
+
+### Vault increment 6
+
+Increment 5 passed five repeated local HTTPS injection race tests, full regression/lifecycle and CI at 169dba1 (44728550778). Increment 6 adds authenticated timed bearer records, mandatory expiry metadata on provisioning, maximum one-hour credential window, one-use internal leases capped at 15 seconds or remaining credential/passport life, transport deadlines and final release checks. Negative tests include legacy/future/expired record denial and lease concurrency/deadline. Validation pending. No provider-side issuance or revocation guarantees.

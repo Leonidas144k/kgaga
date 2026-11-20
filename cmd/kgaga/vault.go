@@ -20,19 +20,21 @@ func runVaultOperator(command string,args []string) {
 	kid:=fs.String("vault-kek-id","","Expected KEK identity (lowercase hex)")
 	name:=fs.String("name","","Secret name")
 	version:=fs.Uint64("version",0,"Immutable secret version")
+	start:=fs.Int64("not-before",0,"Credential not-before Unix seconds")
+	end:=fs.Int64("expires-at",0,"Credential expiry Unix seconds")
 	fs.Parse(args)
 	if fs.NArg()!=0 || *dir=="" || *keyFile=="" { log.Fatal("explicit vault paths and IDs required") }
 	id,err:=vault.ParseID(*vid); if err!=nil { log.Fatal("invalid vault identity") }
 	keyID,err:=vault.ParseID(*kid); if err!=nil { log.Fatal("invalid KEK identity") }
 	if command=="vault-init" {
-		if *name!="" || *version!=0 { log.Fatal("name/version not valid for vault-init") }
+		if *name!="" || *version!=0 || *start!=0 || *end!=0 { log.Fatal("record flags not valid for vault-init") }
 		if err:=vault.Init(*dir,id); err!=nil { log.Fatal("vault initialization failed") }
 		s,err:=vault.Open(*dir,id); if err!=nil { log.Fatal("vault initialization failed") }
 		if err:=s.CreateMasterKey(*keyFile,keyID); err!=nil { log.Fatal("master key creation failed; inspect partial initialization offline") }
 		fmt.Println("Initialized operator vault and external master key")
 		return
 	}
-	if *name=="" || *version==0 { log.Fatal("secret name and positive version required") }
+	if *name=="" || *version==0 || *start<=0 || *end<=*start || *end-*start>3600 { log.Fatal("name, positive version and explicit validity window of at most 3600 seconds required") }
 	s,err:=vault.Open(*dir,id); if err!=nil { log.Fatal("vault open failed") }
 	m,err:=s.OpenManaged(*keyFile,keyID); if err!=nil { log.Fatal("master key open failed") }
 	info,err:=os.Stdin.Stat()
@@ -40,6 +42,6 @@ func runVaultOperator(command string,args []string) {
 	token,err:=io.ReadAll(io.LimitReader(os.Stdin,4097))
 	defer clear(token)
 	if err!=nil || vault.ValidateBearer(token)!=nil { log.Fatal("invalid bearer token input") }
-	if err:=m.Put(*name,*version,token); err!=nil { log.Fatal("vault record publication failed") }
+	if err:=m.PutBearer(*name,*version,token,*start,*end); err!=nil { log.Fatal("vault record publication failed") }
 	fmt.Println("Published immutable encrypted vault record")
 }

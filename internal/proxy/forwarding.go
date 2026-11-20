@@ -90,8 +90,13 @@ type inspectedResponse struct {
 
 // exchange never follows redirects, forwards 1xx messages or streams
 // uninspected bytes. TLS peer validation is Go's normal verification.
-func exchange(r *http.Request,target *url.URL,transport *http.Transport,claims *passport.AgentClaims,body []byte,info *mcp.InspectionResult,inspectSecrets bool,secret []byte) (*inspectedResponse,error) {
-	ctx,cancel:=context.WithTimeout(r.Context(),upstreamTimeout)
+func exchange(r *http.Request,target *url.URL,transport *http.Transport,claims *passport.AgentClaims,body []byte,info *mcp.InspectionResult,inspectSecrets bool,secret []byte,leaseDeadline time.Time) (*inspectedResponse,error) {
+	deadline:=time.Now().Add(upstreamTimeout)
+	if len(secret)>0 {
+		if leaseDeadline.IsZero() || !time.Now().Before(leaseDeadline) { return nil,errLeaseExpired }
+		if leaseDeadline.Before(deadline) { deadline=leaseDeadline }
+	}
+	ctx,cancel:=context.WithDeadline(r.Context(),deadline)
 	defer cancel()
 	u:=*target
 	u.Path=r.URL.Path
@@ -125,6 +130,7 @@ func exchange(r *http.Request,target *url.URL,transport *http.Transport,claims *
 		// after transport completes. Never log raw transport errors here.
 		defer out.Header.Del("Authorization")
 	}
+	if err:=ctx.Err(); err!=nil { return nil,err }
 	resp,err:=transport.RoundTrip(out)
 	if err!=nil { return nil,err }
 	defer resp.Body.Close()
@@ -171,5 +177,6 @@ func exchange(r *http.Request,target *url.URL,transport *http.Transport,claims *
 	if resp.StatusCode!=204 && resp.StatusCode!=205 && r.Method!="HEAD" {
 		headers.Set("Content-Length",strconv.Itoa(len(data)))
 	}
+	if err:=ctx.Err(); err!=nil { return nil,err }
 	return &inspectedResponse{status:resp.StatusCode,headers:headers,body:data},nil
 }

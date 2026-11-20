@@ -73,8 +73,11 @@ func TestVaultCredentialInjection(t *testing.T) {
 	s,err:=vault.Open(vdir,vid); if err!=nil { t.Fatal(err) }
 	if err:=s.CreateMasterKey(keyPath,kid); err!=nil { t.Fatal(err) }
 	m,err:=s.OpenManaged(keyPath,kid); if err!=nil { t.Fatal(err) }
-	if err:=m.Put("token",1,[]byte(secret)); err!=nil { t.Fatal(err) }
-	if err:=m.Put("token",2,[]byte("different-version-not-selected")); err!=nil { t.Fatal(err) }
+	now:=time.Now().Unix()
+	if err:=m.PutBearer("token",1,[]byte(secret),now-10,now+600); err!=nil { t.Fatal(err) }
+	if err:=m.PutBearer("token",2,[]byte("different-version-not-selected"),now-10,now+600); err!=nil { t.Fatal(err) }
+	if err:=m.PutBearer("token",3,[]byte(secret),now+600,now+1200); err!=nil { t.Fatal(err) }
+	if err:=m.Put("token",4,[]byte(secret)); err!=nil { t.Fatal(err) }
 	grant:=func(path,method,mcp,tool,scope string,version int)string{
 		return fmt.Sprintf(`  - agent_id: "agent"
     owner: "owner"
@@ -91,7 +94,7 @@ func TestVaultCredentialInjection(t *testing.T) {
 	}
 	policyPath:=filepath.Join(dir,"vault.yaml")
 	id:=hex.EncodeToString(vid[:])
-	raw:=fmt.Sprintf("version: \"1\"\nvault_id: \"%s\"\ngrants:\n",id)+grant("/api","GET","","","read",1)+grant("/api/missing","GET","","","read",9)+grant("/mcp","POST","tools/call","search","mcp:tool:search",1)
+	raw:=fmt.Sprintf("version: \"1\"\nvault_id: \"%s\"\ngrants:\n",id)+grant("/api","GET","","","read",1)+grant("/api/missing","GET","","","read",9)+grant("/api/future","GET","","","read",3)+grant("/api/legacy","GET","","","read",4)+grant("/mcp","POST","tools/call","search","mcp:tool:search",1)
 	if err:=os.WriteFile(policyPath,[]byte(raw),0600); err!=nil { t.Fatal(err) }
 	broker,err:=OpenVaultGateway(policyPath,vdir,id,keyPath,hex.EncodeToString(kid[:])); if err!=nil { t.Fatal(err) }
 	cfg:=&policy.Config{Version:"2",RedactSecrets:true,MCP:policy.MCPPolicy{AllowedTools:[]string{"search","read_file"}},Rules:[]policy.Rule{{PathPrefix:"/api",AllowedScopes:[]string{"read"},AllowedMethods:[]string{"GET"}}}}
@@ -123,6 +126,8 @@ func TestVaultCredentialInjection(t *testing.T) {
 	run(h,"agent","/api?x=1","GET","",scopes,false,403,false)
 	run(h,"agent","/api/ungranted","GET","",scopes,false,403,false)
 	run(h,"agent","/api/missing","GET","",scopes,false,503,false)
+	run(h,"agent","/api/future","GET","",scopes,false,503,false)
+	run(h,"agent","/api/legacy","GET","",scopes,false,503,false)
 	for _,v:=range []int32{1,2,3} { mode.Store(v); run(h,"agent","/api","GET","",scopes,false,502,true) }
 	body:=`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search"}}`
 	mode.Store(4)

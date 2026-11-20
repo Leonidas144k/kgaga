@@ -55,3 +55,5 @@ Vault increment 003 introduces managed envelope encryption with an external oper
 Vault increment 004 adds a separate strict, immutable Vault policy evaluator in internal/policy. It selects metadata for an exact holder-bound, nondelegated agent operation after trusted gateway admission. It does not authenticate claims on its own, read secrets or alter existing gateway behavior; credential injection is the next increment.
 
 Vault increment 005 wires the exact policy and managed store into explicit authenticated HTTPS gateway mode. All protected operations require a matching Vault grant; fixed bearer injection occurs only in the outbound request, with exact-token response checks. Operator-only initialization and stdin provisioning commands added. No production assurance, leases, rotation or agent retrieval endpoint.
+
+Vault increment 006 requires authenticated credential validity metadata and internal one-use leases, with deadline-limited HTTPS exchanges and response release. Untimed records fail closed in Vault mode; true provider-issued ephemeral tokens remain future work.

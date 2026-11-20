@@ -3,6 +3,7 @@ package proxy
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/Leonidas144k/kgaga/internal/mcp"
 	"github.com/Leonidas144k/kgaga/internal/passport"
@@ -37,7 +38,7 @@ func (v *VaultGateway) bind(origin,audience string) error {
 	return v.policy.ValidateBinding(origin,audience,v.id)
 }
 
-func (v *VaultGateway) credential(c *passport.AgentClaims,audience,origin string,r *http.Request,info *mcp.InspectionResult)([]byte,error) {
+func (v *VaultGateway) credential(c *passport.AgentClaims,audience,origin string,r *http.Request,info *mcp.InspectionResult)(*credentialLease,error) {
 	op:=policy.VaultOperation{Origin:origin,Method:r.Method,Target:r.URL.RequestURI()}
 	// First release supports stateless MCP tool calls only.
 	if info!=nil {
@@ -48,8 +49,7 @@ func (v *VaultGateway) credential(c *passport.AgentClaims,audience,origin string
 	sel,err:=v.policy.Authorize(c,audience,op)
 	if err!=nil { return nil,err }
 	if sel.VaultID!=v.id { return nil,policy.ErrVaultDenied }
-	secret,err:=v.store.Get(sel.SecretName,sel.Version)
+	secret,expiry,err:=v.store.GetBearer(sel.SecretName,sel.Version)
 	if err!=nil { return nil,err }
-	if err:=vault.ValidateBearer(secret); err!=nil { clear(secret); return nil,err }
-	return secret,nil
+	return newCredentialLease(secret,expiry,c.ExpiresAt.Time,time.Now())
 }

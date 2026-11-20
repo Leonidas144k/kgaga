@@ -288,8 +288,9 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			}
 		}
 		var secret []byte
+		var leaseDeadline time.Time
 		if broker!=nil {
-			secret,err=broker.credential(claims,audience,targetURL,r,mcpInfo)
+			lease,err:=broker.credential(claims,audience,targetURL,r,mcpInfo)
 			if err!=nil {
 				status:=http.StatusServiceUnavailable
 				if errors.Is(err,policy.ErrVaultDenied) { status=http.StatusForbidden }
@@ -297,18 +298,20 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 				if isMCP { writeMCPError(w,status,-32603,"vault credential unavailable or denied") } else { http.Error(w,"vault credential unavailable or denied",status) }
 				return
 			}
-			defer clear(secret)
+			defer lease.close()
 			// Storage lookup is potentially slow. Repeat live checks after
 			// the lookup so a stale decision cannot authorize injection.
 			e:=checkLive(rawToken,audience,trust,reg,store)
 			if e==nil { _,e=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now()) }
+			if e==nil { secret,leaseDeadline,e=lease.consume(time.Now()) }
 			if e!=nil {
 				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault final admission denied"})
 				if isMCP { writeMCPError(w,403,-32603,"vault final admission denied") } else { http.Error(w,"vault final admission denied",403) }
 				return
 			}
+			defer clear(secret)
 		}
-		response,err:=exchange(r,target,transport,claims,bodyBytes,mcpInfo,cfg.RedactSecrets,secret)
+		response,err:=exchange(r,target,transport,claims,bodyBytes,mcpInfo,cfg.RedactSecrets,secret,leaseDeadline)
 		if err!=nil {
 			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"upstream response rejected or unavailable"})
 			if isMCP { writeMCPError(w,http.StatusBadGateway,-32603,"upstream response rejected") } else { http.Error(w,"upstream response rejected",http.StatusBadGateway) }
@@ -322,6 +325,11 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 				if isMCP { writeMCPError(w,403,-32603,"response access denied") } else { http.Error(w,"response access denied",403) }
 				return
 			}
+		}
+		if broker!=nil && !time.Now().Before(leaseDeadline) {
+			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault lease expired before response"})
+			if isMCP { writeMCPError(w,403,-32603,"response access denied") } else { http.Error(w,"response access denied",403) }
+			return
 		}
 		emitAudit(AuditEvent{AgentID:claims.AgentID,Owner:claims.Owner,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"ALLOW",Scopes:claims.Scopes})
 		for key,values:=range response.headers { for _,value:=range values { w.Header().Add(key,value) } }
