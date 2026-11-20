@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.5.0 vault development
 
+- Add operator-only version-pinned HashiCorp KV v2 HTTPS imports via a provider interface. Imported credentials remain staged and require local activation; no live fetch or automatic provider revocation propagation.
+
 - Add staged/active credential lifecycle with explicit activation, monotonic rotation, revocation, authenticated persistent state and live gateway checks. Existing records require activation; pinned policies do not automatically advance.
 
 - Require authenticated timed bearer records in Vault mode; enforce one-hour maximum credential validity and per-request single-use leases capped at 15 seconds, with deadline-bound exchanges. Existing untimed tokens require explicit new version provisioning.

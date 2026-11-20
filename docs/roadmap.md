@@ -132,3 +132,7 @@ Increment 5 passed five repeated local HTTPS injection race tests, full regressi
 ### Vault increment 7
 
 Increment 6 passed repeated local lease/injection tests, regression lifecycle and CI at a3dd181 (44729786353). Increment 7 adds staged/active/retired/revoked versions, HMAC-authenticated bounded per-name lifecycle state, exclusive administrative update locks, explicit activation and revocation commands, monotonic rotation and live gateway checks before decryption/dispatch/response release. Includes restart, tamper, cross-name, concurrent activation and in-flight revocation tests. Validation pending; no rollback resistance, provider-side revocation, master key rotation or production assurance.
+
+### Vault increment 8
+
+Increment 7 passed repeated local lifecycle/injection tests and CI at 0c4bccf (44748823740). Increment 8 adds a provider-independent operator import interface, concrete HashiCorp KV v2 adapter (exact remote version/field, verified TLS, no redirects, bounded strict response, deletion metadata checks), staged immutable publication and synthetic HTTPS/negative tests. Validation pending. Point-in-time import only; additional providers, native dynamic issuance, source audit and live provider revocation remain open.

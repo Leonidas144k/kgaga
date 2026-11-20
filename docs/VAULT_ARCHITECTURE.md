@@ -1,6 +1,6 @@
 # Kgaga Vault — cryptographic architecture
 
-Status: increment 004 development foundation. Local immutable encrypted records, external-file KEK custody, envelope encryption and a separate Vault access policy evaluator. Explicit opt-in HTTPS gateway enforcement, bearer injection and timed credential leases are implemented through increment 007.
+Status: increment 004 development foundation. Local immutable encrypted records, external-file KEK custody, envelope encryption and a separate Vault access policy evaluator. Explicit opt-in HTTPS gateway enforcement, bearer injection and timed credential leases are implemented through increment 008.
 
 ## Goal and separation of duties
 
@@ -65,7 +65,13 @@ Per-name .lifecycle-<name> files are private 0600, canonical bounded KGC1 metada
 
 Rotate by staging a newer version, intentionally updating the exact pinned policy and explicitly activating the new version. Policy remains startup-bound; old grants stop working as soon as rotation is observed. Coordinating policy restart and activation may cause downtime; no automatic cross-process transaction. Revocation does not erase encrypted records, cancel dispatched actions or revoke provider-side credentials. State HMAC does not prevent restoring an older valid state or operator deletion/reset. Protect state and keys together; never delete lifecycle files or clear crash locks while writers may be active. No general anti-rollback, full crash recovery, master-key rewrapping/rotation, distributed consistency or external provider revocation. Only synthetic credentials.
 
-Later: external secret managers and dynamic issuance, audit, adversarial testing and release review.
+External integration (increment 008): the trusted local operator command vault-import uses HashiCorp Vault KV v2 over verified HTTPS. It takes the existing local vault paths/IDs/name/version and explicit not-before/expires-at window, plus --provider-origin, --provider-mount, --provider-path, --provider-field, --provider-version, and optional --provider-ca. The provider authentication token is read as exact bytes from protected stdin (not a terminal or argument). Use a least-privilege short-lived provider token with read access only to the exact source path. The command fetches GET /v1/{mount}/data/{path}?version={version}, with X-Vault-Token, using a private transport without environment proxies or redirect following. No plaintext HTTP, latest-version selection, compression, retries by the application, agent-specified source, namespace or provider write API. The origin, mount, path, version and field are operator-controlled. Explicit private roots replace system roots. TLS 1.2 minimum, verified hostname and chain, 10-second request deadline, 32 KiB response-header limit and 128 KiB body limit.
+
+The response must have HTTP 200 and JSON content type, with exact matching numeric version, destroyed false, empty deletion_time and the requested string field. Strict bounded JSON traversal rejects duplicate/case-aliased keys and ambiguous data. A nonempty deletion_time is conservatively rejected even if scheduled in the future. The downstream value must meet the existing bearer format and must not equal the provider authentication token. ImportBearer uses the same immutable PutBearer staging path; no plaintext output, implicit activation or overwrite. Existing local records are not changed on provider fetch failure. The provider-independent BearerSource interface currently has only this concrete adapter. Provider API reference: https://developer.hashicorp.com/vault/api-docs/secret/kv/kv-v2 .
+
+This is a version-pinned point-in-time import, not live remote retrieval, dynamic issuance or continuous synchronization. Provider deletion/revocation after import is not automatically reflected locally; explicitly revoke the local version and the actual upstream credential when needed. Operator-declared validity remains required, not certified by KV. Never reuse a provider version as a substitute for the local policy's pinned version without deliberate operator mapping. Source provenance is not yet persisted or independently audited. No AWS Secrets Manager/KMS, Azure, Google Cloud, workload identity or provider-side lease lifecycle yet. The synthetic TLS tests model the KV v2 wire response; no real provider instance has been tested. No live credentials until review.
+
+Later: provider-native dynamic issuance and additional providers, secret usage audit, adversarial testing and release review.
 
 ## Threat model and operational limits
 
