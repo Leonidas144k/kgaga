@@ -31,7 +31,7 @@ func newUpstreamTransport() *http.Transport {
 		TLSHandshakeTimeout:5*time.Second,
 		ResponseHeaderTimeout:10*time.Second,
 		IdleConnTimeout:30*time.Second,
-		MaxIdleConns:32,MaxIdleConnsPerHost:8,
+		MaxIdleConns:32,MaxIdleConnsPerHost:8,MaxConnsPerHost:MaxUpstreamConnections,
 		MaxResponseHeaderBytes:32<<10,
 		DisableCompression:true,
 		ForceAttemptHTTP2:true,

@@ -64,6 +64,7 @@ func RunStdioProxy(cmdPath string,cmdArgs []string,cfg *policy.Config,audience s
 	for _,ready:=range []func()error{trust.Ready,reg.Ready,rev.Ready,replay.Ready} {
 		if err:=ready(); err!=nil { return err }
 	}
+	if rev.SameDirectory(replay) { return errors.New("replay and revocation stores must be separate") }
 	ctx,cancel:=context.WithCancel(context.Background())
 	defer cancel()
 	var cmd *exec.Cmd

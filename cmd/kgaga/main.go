@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -375,11 +376,15 @@ func main() {
 			Handler:           handler,
 			ReadHeaderTimeout: 5 * time.Second,
 			ReadTimeout:       30 * time.Second,
-			IdleTimeout:       60 * time.Second,
+			IdleTimeout:       30 * time.Second,
+			WriteTimeout:      65 * time.Second,
 			MaxHeaderBytes:    32 << 10,
 		}
-		// Streaming responses require a deliberate write-deadline strategy.
-		log.Fatal(server.ListenAndServe())
+		listener,err:=net.Listen("tcp",*listen)
+		if err!=nil { log.Fatalf("listen failed: %v",err) }
+		bounded,err:=proxy.LimitListener(listener,proxy.MaxOpenConnections)
+		if err!=nil { _=listener.Close(); log.Fatal(err) }
+		log.Fatal(server.Serve(bounded))
 
 	case "stdio-frame":
 		fs:=flag.NewFlagSet("stdio-frame",flag.ExitOnError)

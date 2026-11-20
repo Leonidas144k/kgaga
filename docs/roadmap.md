@@ -80,3 +80,7 @@ Bounded HTTP exchange with explicit forwarding header allowlists, no redirects o
 ### Gateway increment 6
 
 Mandatory local token-bucket agent rate limiting with optional strict YAML settings, stable ID keys, HTTP 429/Retry-After and bounded tracking capacity (503), per-session stdio rate limits, no depleted-bucket eviction, and deterministic concurrency/policy/gateway tests. Increment 5 passed local and CI at e8b8f78. Increment 6 validation pending. Limits are in-memory per handler/session, not distributed, durable or aggregate parent quotas.
+
+### Gateway increment 7
+
+Fixed aggregate HTTP admission and concurrency ceilings, capped accepted TCP and upstream connections, write deadline, persistent replay reservation ceiling with legacy migration and cross-process lock, and regression tests. Increment 6 passed local and CI at 730a8e6. Increment 7 validation pending. No automated pruning, complete disk accounting, distributed quotas, or production DoS guarantee.

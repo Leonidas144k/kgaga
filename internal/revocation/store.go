@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 const DefaultDir = "kgaga-revocations"
@@ -17,6 +18,7 @@ var ErrRevoked = errors.New("passport revoked")
 // Store pins the directory identity for the lifetime of the process.
 // Its directory and parent must be protected from untrusted writes.
 type Store struct {
+	replayMu sync.Mutex
 	dir string
 	info os.FileInfo
 }
@@ -98,7 +100,7 @@ func (s *Store) Revoke(id string) error {
 
 // Consume records a single-use nonce. Unlike Revoke, it rejects existing
 // markers. Use a dedicated store, never the credential revocation directory.
-func (s *Store) Consume(id string) error {
+func (s *Store) createReplayMarker(id string) error {
 	path,err:=s.marker(id)
 	if err!=nil { return err }
 	f,err:=os.OpenFile(path,os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600)
@@ -107,4 +109,9 @@ func (s *Store) Consume(id string) error {
 	if err:=f.Sync(); err!=nil { _=f.Close(); return err }
 	if err:=f.Close(); err!=nil { return err }
 	return s.ready()
+}
+
+// SameDirectory rejects using one physical directory for revocations and replay.
+func (s *Store) SameDirectory(other *Store) bool {
+	return s!=nil && other!=nil && s.info!=nil && other.info!=nil && os.SameFile(s.info,other.info)
 }

@@ -56,6 +56,7 @@ func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.C
 	if err:=reg.Ready(); err!=nil { return nil,err }
 	if err:=trust.Ready(); err!=nil { return nil,err }
 	if err:=replay.Ready(); err!=nil { return nil,err }
+	if store.SameDirectory(replay) { return nil,errors.New("replay and revocation stores must be separate") }
 	return newHandler(targetURL, nil, cfg, audience, store, reg, trust, replay)
 }
 
@@ -286,14 +287,14 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 
 	// Do not use ServeMux here: its path-cleaning redirects can precede
 	// authentication and differ from the resource actually authorized.
-	return http.HandlerFunc(func(w http.ResponseWriter,r *http.Request) {
+	return boundAdmission(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request) {
 		if err:=validateRoute(r); err!=nil { http.Error(w,"invalid or unsupported HTTP route",http.StatusBadRequest); return }
 		if r.URL.Path=="/.well-known/jwks.json" {
 			if r.Method!="GET" { w.Header().Set("Allow","GET"); http.Error(w,"method not allowed",405); return }
 			serveJWKS(w,r); return
 		}
 		serveProtected(w,r)
-	}), nil
+	}),MaxActiveRequests,6000,128)
 }
 
  // validateRoute rejects alternate path interpretations and user-controlled

@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.4.0 gateway development
 
+- Bound aggregate HTTP admission, active handlers, TCP/upstream connections and write time. Cap persistent replay reservations without pruning; reject shared replay/revocation directories. Offline recovery required after a crash lock.
+
 - Mandatory per-agent token buckets, optional validated rate_limit settings, HTTP 429/Retry-After, bounded tracking and stdio session admission. Counters are local and reset on restart.
 
 - Bounded buffered HTTP request/response inspection, restricted forwarding headers and content types, matched MCP response IDs, and bidirectional block-on-secret policy. Existing transparent proxy behavior is intentionally restricted.
