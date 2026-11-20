@@ -17,3 +17,7 @@ kgaga.pub
 /kgaga-trust/
 
 /kgaga-replay/
+
+# Reserved for local development vault state; never commit live secrets.
+/kgaga-vault/
+/kgaga-vault.key

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — v0.5.0 vault development
+
+- Add isolated AES-256-GCM record primitives with authenticated record metadata, bounded versioned ciphertext format, cryptographic key/nonce generation and tamper tests. No storage or agent/gateway secret API yet.
+
 ## Unreleased — v0.4.0 gateway development
 
 - Adversarial regression coverage: reject ambiguous signed v2 envelopes, recheck live credentials and proof freshness before dispatch, repeat replay tests and fuzz the envelope parser in CI.

@@ -43,3 +43,7 @@ Use separate protected directories for registry, revocation, trust and replay. F
 ## Next architecture
 
 A hardened HTTP/MCP boundary precedes vault, audit ledger and enterprise control plane. Independent workload attestation, standard protocol interoperability, secure remote issuance, secret management and multi-node consistency are not included in this preview.
+
+## Vault development foundation
+
+Gateway merged at 2fcecf6; post-merge CI passed. The separate internal/vault cryptographic foundation is under development on the Vault branch; see [Vault architecture](VAULT_ARCHITECTURE.md). It does not yet change the request lifecycle or provide secret storage or injection.

@@ -100,3 +100,11 @@ Closed v2 credential wire schema and canonical proof signature encoding; final l
 ### Gateway release review
 
 All nine implementation increments validated locally and in CI at 8bbfe0f (CI 44711337360). Local fuzz run: 21,532 executions, 27 new interesting inputs, no failure. Release-review documentation reconciles current architecture and threat model. Dependency/toolchain vulnerability review, internal preview approval, merge and main CI remain open. No tag or distribution approval.
+
+## Vault v0.5.0 development
+
+Gateway merged via PR #3 at 2fcecf6. Both post-merge CI runs (44713495741, 44713489325) succeeded. Local govulncheck reported no vulnerabilities after automatic newer scanner toolchain selection; release build/scanner standardization and artifact checks remain open. No tag.
+
+### Vault increment 1
+
+Separate internal/vault package and documented architecture. AES-256-GCM record primitive, random data keys/identifiers/nonces, bounded KGV1 format, domain-separated authenticated record context and negative tests. No persistent storage, key wrapping, access policy or gateway integration yet. Validation pending. See [Vault architecture](VAULT_ARCHITECTURE.md).
