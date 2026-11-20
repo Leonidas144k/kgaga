@@ -53,7 +53,7 @@ func NewHandlerForAudience(targetURL string, pubKey ed25519.PublicKey, cfg *poli
 	return newHandler(targetURL, pubKey, cfg, audience, store)
 }
 
-func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string) (http.Handler, error) {
+func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store) (http.Handler, error) {
 	target, err := url.Parse(targetURL)
 	if err != nil {
 		return nil, err
