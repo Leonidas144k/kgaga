@@ -39,4 +39,8 @@ Local immutable agent registry, registration, inspection, permanent suspension, 
 
 ### Identity increment 4
 
-Explicit trusted signing keyring, generation into a new directory, public-key trust, manual issuer selection and permanent retirement, live JWKS, mandatory keyring checks and regression tests. Single-host operator-controlled storage; no automatic rotation, distributed trust synchronization or HSM support. Pending CI.
+Explicit trusted signing keyring, generation into a new directory, public-key trust, manual issuer selection and permanent retirement, live JWKS, mandatory keyring checks and regression tests. Single-host operator-controlled storage; no automatic rotation, distributed trust synchronization or HSM support. Increment 4 CI and local smoke passed at 4fa2abf.
+
+### Identity increment 5
+
+Holder confirmation in passports, immutable registered agent public key, strict HTTP request proof verification, and atomic local replay marker consumption. Credential inspection is not live proof. Legacy unbound passports are denied by CLI/gateway. Custom development protocol, no standards compliance claim. Distributed replay state, full request integrity, durable pruning and independent review outstanding. Pending validation.

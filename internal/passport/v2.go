@@ -70,6 +70,17 @@ func ValidateIdentity(agent, owner string, scopes []string) error {
 
 // MintV2 issues an audience-bound passport, with no fallback to the legacy issuer.
 func MintV2(privPath, agent, owner string, scopes []string, audience string, ttl time.Duration) (string, error) {
+	return mintV2(privPath,agent,owner,scopes,audience,ttl,nil)
+}
+
+// MintBoundV2 binds a passport to an independently held Ed25519 key.
+func MintBoundV2(privPath, agent, owner string, scopes []string, audience string, ttl time.Duration, holder ed25519.PublicKey) (string,error) {
+	id,err:=KeyID(holder)
+	if err!=nil { return "",err }
+	return mintV2(privPath,agent,owner,scopes,audience,ttl,&Confirmation{Thumbprint:id})
+}
+
+func mintV2(privPath, agent, owner string, scopes []string, audience string, ttl time.Duration, confirmation *Confirmation) (string,error) {
 	if err := ValidateAudience(audience); err != nil {
 		return "", err
 	}
@@ -87,12 +98,14 @@ func MintV2(privPath, agent, owner string, scopes []string, audience string, ttl
 	if err != nil {
 		return "", err
 	}
+	if confirmation!=nil && confirmation.Thumbprint==kid { return "",errors.New("holder and issuer keys must differ") }
 	id := make([]byte, 16)
 	if _, err := rand.Read(id); err != nil {
 		return "", err
 	}
 	now := time.Now().UTC().Truncate(time.Second)
 	claims := AgentClaims{
+		Confirmation:confirmation,
 		AgentID: agent, Owner: owner, Scopes: append([]string(nil), scopes...),
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer: IssuerV2, Subject: agent, Audience: jwt.ClaimStrings{audience},
@@ -155,6 +168,10 @@ func VerifyV2(raw string, key ed25519.PublicKey, audience string) (*AgentClaims,
 	}
 	if err := ValidateIdentity(c.AgentID, c.Owner, c.Scopes); err != nil {
 		return nil, err
+	}
+	if c.Confirmation!=nil {
+		b,err:=base64.RawURLEncoding.Strict().DecodeString(c.Confirmation.Thumbprint)
+		if err!=nil || len(b)!=32 || c.Confirmation.Thumbprint==kid { return nil,errors.New("invalid holder confirmation") }
 	}
 	return c, nil
 }

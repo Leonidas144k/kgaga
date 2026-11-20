@@ -81,7 +81,8 @@ The examples below assume `kgaga` is on your `PATH`. To run it directly from the
 Run `kgaga init`, `kgaga revocations-init`, `kgaga agents-init`, `kgaga keys-init`, and `kgaga key-trust --public kgaga.pub` once in a dedicated new directory. Existing installations must initialize only missing stores as part of an intentional first-time migration, not recreate lost state or regenerate keys. Register an agent before minting:
 
 ```bash
-kgaga agent-register --agent support-bot --owner ops@company.com --scopes mcp:tool:search,db:read --audiences support-api
+kgaga key-generate --out /secure/agent-holder
+kgaga agent-register --agent support-bot --owner ops@company.com --scopes mcp:tool:search,db:read --audiences support-api --holder-public /secure/agent-holder/kgaga.pub
 ```
 
 Generate a short-lived signed token bound to an explicit service audience, an agent, an owner, and permission scopes. Protect the signing key and state; a key holder can sign claims outside the CLI, so registry checks at verification are mandatory.
@@ -111,7 +112,7 @@ Replace the example agent name, owner, and scopes with the values required for y
 kgaga proxy --listen 127.0.0.1:8080 --target http://localhost:3000 --audience support-api
 ```
 
-Use a distinct service identifier per trust boundary, and use the same audience for issuance and gateway verification. Audiences are explicit identifiers, not inferred from untrusted HTTP headers. Passports use Ed25519, a key thumbprint, a random credential ID, and mandatory time claims; default TTL is 15 minutes, maximum 1 hour. Unique IDs are not replay protection. Single-host passport revocation is now enforced by the CLI and audience-bound gateway. Local operator-controlled key rotation is supported. Proof of possession, distributed revocation and authenticated stdio remain future work. The gateway strips the passport header before forwarding, and sets verified identity headers from signed claims; upstream services must only trust these headers on an authenticated, isolated gateway connection. Use only in controlled testing, not production.
+Use a distinct service identifier per trust boundary, and use the same audience for issuance and gateway verification. Audiences are explicit identifiers, not inferred from untrusted HTTP headers. Passports use Ed25519, a key thumbprint, a random credential ID, and mandatory time claims; default TTL is 15 minutes, maximum 1 hour. Unique IDs are not replay protection. Single-host passport revocation is now enforced by the CLI and audience-bound gateway. Local operator-controlled key rotation is supported. Holder-bound HTTP request proofs and single-host replay protection are implemented; distributed revocation and authenticated stdio remain future work. The gateway strips the passport header before forwarding, and sets verified identity headers from signed claims; upstream services must only trust these headers on an authenticated, isolated gateway connection. Use only in controlled testing, not production.
 
 ### Revoke a passport
 
@@ -149,6 +150,19 @@ kgaga key-retire --kid OLD_KID
 ```
 
 Replace placeholders with actual paths and the old key's thumbprint. Keep all private keys outside version control. JWKS is read from live trusted records and excludes retired keys; downstream caches and already admitted requests are outside this guarantee. Retirement is permanent through the CLI; no automatic active-key selection, distributed synchronization, HSM, tamper-proof store or verified power-loss durability is provided. This requires a local filesystem with hard-link support and trusted operator control over state and its parent directory. Do not delete retirement markers or restore stale state. The legacy experimental stdio wrapper is unaffected and does not provide this authentication.
+
+### Holder-bound requests (development protocol)
+
+Generate an independent agent key on the agent host, and register only its public PEM. Existing registrations without a holder key cannot issue or use passports; register a fresh ID rather than editing existing immutable records. Earlier unbound passports are denied. The issuer signs a confirmation thumbprint (`cnf.jkt`); gateway and CLI compare it against the registry. The agent keeps its private key separate from the issuer. The `verify` command inspects credential validity and binding but does not authenticate a live request.
+
+Initialize a dedicated replay directory with `kgaga replay-init` (only once; never recreate lost state). For each request, sign a fresh proof using the exact inbound method, path/query, request bytes and supported header values. Pass the passport via stdin:
+
+```bash
+PROOF=$(printf '%s' "$TOKEN" | kgaga proof --holder-key /secure/agent-holder/kgaga.key --method GET --target /api/db)
+# Send the passport in X-Agent-Passport and the fresh proof in X-Kgaga-Proof.
+```
+
+Use TLS; avoid exposing secrets in command arguments, logs or URLs. `--body-file`, `--content-type`, `--mcp-version`, `--mcp-method`, and `--mcp-session` bind the relevant inbound values. Encoded bodies and ambiguous headers are rejected. Proofs are `v1.timestamp.nonce.signature`: decimal Unix seconds, 16 random bytes in lowercase hex, and base64url Ed25519 signature without padding. The signed message is Go `encoding/json.Marshal` of the string array `["kgaga-request-proof-v1", timestamp, nonce, base64url(SHA256(passport)), method, origin-form target, content-type, mcp-version, mcp-method, mcp-session, base64url(SHA256(body))]`. This is a Kgaga development protocol, not RFC 9449 DPoP or HTTP Message Signatures. The gateway permits 30 seconds of age and 5 seconds of future clock skew, records each valid proof nonce exclusively in the local replay directory before policy evaluation, and strips the proof before forwarding. A replay is rejected even after a normal restart; markers are retained indefinitely. Use the same protected `--replay` store for all gateways sharing a trust boundary on this host. Distributed replay prevention, pruning, power-loss durability, full HTTP header integrity, transport security, and independent review remain outstanding. A captured complete fresh request could still race the legitimate request. Do not use in production.
 
 ## Migration from Pangolin v0.1
 

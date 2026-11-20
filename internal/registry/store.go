@@ -3,6 +3,8 @@ package registry
 
 import (
 	"crypto/sha256"
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -20,6 +22,7 @@ const maxRecord = 64 << 10
 var ErrDenied = errors.New("agent authorization denied")
 
 type Agent struct {
+	HolderKey string `json:"holder_key,omitempty"`
 	ID string `json:"agent_id"`
 	Owner string `json:"owner"`
 	Scopes []string `json:"scopes"`
@@ -55,6 +58,7 @@ func (s *Store) Ready() error {
 }
 
 func validate(a Agent) error {
+	if a.HolderKey!="" { if _,err:=decodeHolder(a.HolderKey); err!=nil { return err } }
 	if err:=passport.ValidateIdentity(a.ID,a.Owner,a.Scopes); err!=nil { return err }
 	if len(a.Audiences)==0 || len(a.Audiences)>64 { return errors.New("expected 1 to 64 audiences") }
 	seen:=map[string]bool{}
@@ -152,4 +156,38 @@ func (s *Store) Authorize(id,owner string,scopes []string,audience string) error
 	if a.Owner!=owner || !contains(a.Audiences,audience) { return ErrDenied }
 	for _,scope:=range scopes { if !contains(a.Scopes,scope) { return ErrDenied } }
 	return nil
+}
+
+// EncodeHolder stores only the agent public key, never its private key.
+func EncodeHolder(key ed25519.PublicKey) (string,error) {
+	if len(key)!=ed25519.PublicKeySize { return "",errors.New("invalid holder key") }
+	return base64.RawURLEncoding.EncodeToString(key),nil
+}
+
+func decodeHolder(raw string) (ed25519.PublicKey,error) {
+	b,err:=base64.RawURLEncoding.Strict().DecodeString(raw)
+	if err!=nil || len(b)!=ed25519.PublicKeySize || base64.RawURLEncoding.EncodeToString(b)!=raw {
+		return nil,errors.New("invalid holder key")
+	}
+	return ed25519.PublicKey(b),nil
+}
+
+// AuthorizedHolder refuses old unbound registrations and checks the current
+// identity before returning its registered public key.
+func (s *Store) AuthorizedHolder(id,owner string,scopes []string,audience string) (ed25519.PublicKey,error) {
+	if err:=s.Authorize(id,owner,scopes,audience); err!=nil { return nil,err }
+	a,suspended,err:=s.Get(id)
+	if err!=nil { return nil,err }
+	if suspended || a.HolderKey=="" { return nil,ErrDenied }
+	return decodeHolder(a.HolderKey)
+}
+
+func (s *Store) BoundHolder(c *passport.AgentClaims,audience string) (ed25519.PublicKey,error) {
+	if c==nil { return nil,ErrDenied }
+	key,err:=s.AuthorizedHolder(c.AgentID,c.Owner,c.Scopes,audience)
+	if err!=nil { return nil,err }
+	id,err:=passport.KeyID(key)
+	if err!=nil { return nil,err }
+	if c.Confirmation==nil || c.Confirmation.Thumbprint!=id { return nil,ErrDenied }
+	return key,nil
 }

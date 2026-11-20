@@ -115,10 +115,15 @@ func main() {
 		owner := fs.String("owner","","Owner identifier")
 		scopes := fs.String("scopes","","Comma-separated allowed scopes")
 		audiences := fs.String("audiences","","Comma-separated allowed audiences")
+		holderPub:=fs.String("holder-public","","Required agent public PEM path")
 		fs.Parse(os.Args[2:])
 		reg,err:=registry.Open(*dir)
 		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
-		if err:=reg.Register(registry.Agent{ID:*id,Owner:*owner,Scopes:strings.Split(*scopes,","),Audiences:strings.Split(*audiences,",")}); err!=nil { log.Fatalf("register agent failed: %v",err) }
+		holder,err:=passport.LoadPublicKey(*holderPub)
+		if err!=nil { log.Fatalf("load holder public key failed: %v",err) }
+		encoded,err:=registry.EncodeHolder(holder)
+		if err!=nil { log.Fatalf("encode holder failed: %v",err) }
+		if err:=reg.Register(registry.Agent{ID:*id,Owner:*owner,Scopes:strings.Split(*scopes,","),Audiences:strings.Split(*audiences,","),HolderKey:encoded}); err!=nil { log.Fatalf("register agent failed: %v",err) }
 		fmt.Println("Agent registered:",*id)
 
 	case "agent-inspect":
@@ -159,8 +164,9 @@ func main() {
 
 		reg,err:=registry.Open(*registryDir)
 		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
-		if err:=reg.Authorize(*agent,*owner,strings.Split(*scopes,","),*audience); err!=nil { log.Fatalf("mint rejected: %v",err) }
-		token, err := passport.MintV2(*signingKey, *agent, *owner, strings.Split(*scopes, ","), *audience, *ttl)
+		holder,err:=reg.AuthorizedHolder(*agent,*owner,strings.Split(*scopes,","),*audience)
+		if err!=nil { log.Fatalf("mint rejected: %v",err) }
+		token, err := passport.MintBoundV2(*signingKey, *agent, *owner, strings.Split(*scopes, ","), *audience, *ttl,holder)
 		if err != nil {
 			log.Fatalf("mint failed: %v", err)
 		}
@@ -214,13 +220,46 @@ func main() {
 		if err := store.Check(claims.ID); err != nil { log.Fatalf("passport rejected: %v", err) }
 		reg,err:=registry.Open(*registryDir)
 		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
-		if err:=reg.Authorize(claims.AgentID,claims.Owner,claims.Scopes,*audience); err!=nil { log.Fatalf("passport rejected: %v",err) }
+		if _,err:=reg.BoundHolder(claims,*audience); err!=nil { log.Fatalf("passport rejected: %v",err) }
 		if err := json.NewEncoder(os.Stdout).Encode(claims); err != nil {
 			log.Fatalf("write claims failed: %v", err)
 		}
 
+	case "replay-init":
+		fs:=flag.NewFlagSet("replay-init",flag.ExitOnError)
+		dir:=fs.String("replay",passport.ReplayDir,"Dedicated replay store")
+		fs.Parse(os.Args[2:])
+		if err:=revocation.Init(*dir); err!=nil { log.Fatalf("initialize replay store failed: %v",err) }
+		fmt.Println("Initialized replay store")
+
+	case "proof":
+		fs:=flag.NewFlagSet("proof",flag.ExitOnError)
+		key:=fs.String("holder-key","","Agent private key path")
+		method:=fs.String("method","GET","Exact HTTP method")
+		target:=fs.String("target","","Exact origin-form request target including query")
+		bodyFile:=fs.String("body-file","","Exact request body file")
+		contentType:=fs.String("content-type","","Exact Content-Type header")
+		mcpVersion:=fs.String("mcp-version","","MCP-Protocol-Version header")
+		mcpMethod:=fs.String("mcp-method","","Mcp-Method header")
+		mcpSession:=fs.String("mcp-session","","Mcp-Session-Id header")
+		fs.Parse(os.Args[2:])
+		raw,err:=io.ReadAll(io.LimitReader(os.Stdin,(16<<10)+2))
+		if err!=nil || len(raw)>=(16<<10)+2 { log.Fatal("invalid passport input") }
+		var body []byte
+		if *bodyFile!="" {
+			f,err:=os.Open(*bodyFile)
+			if err!=nil { log.Fatalf("read body failed: %v",err) }
+			defer f.Close()
+			body,err=io.ReadAll(io.LimitReader(f,(1<<20)+1))
+			if err!=nil || len(body)>1<<20 { log.Fatal("invalid request body") }
+		}
+		p,err:=passport.SignRequest(*key,strings.TrimSpace(string(raw)),passport.RequestBinding{Method:*method,Target:*target,ContentType:*contentType,MCPVersion:*mcpVersion,MCPMethod:*mcpMethod,MCPSession:*mcpSession,Body:body},time.Now())
+		if err!=nil { log.Fatalf("proof failed: %v",err) }
+		fmt.Println(p)
+
 	case "proxy":
 		fs := flag.NewFlagSet("proxy", flag.ExitOnError)
+		replayDir:=fs.String("replay",passport.ReplayDir,"Dedicated replay store")
 		trustDir:=fs.String("trust",keyring.DefaultDir,"Public trust directory")
 		registryDir := fs.String("registry",registry.DefaultDir,"Agent registry directory")
 		dir := fs.String("revocations", revocation.DefaultDir, "Revocation store directory")
@@ -240,7 +279,9 @@ func main() {
 		if err != nil { log.Fatalf("open revocation store failed: %v", err) }
 		reg,err:=registry.Open(*registryDir)
 		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
-		handler, err := proxy.NewHandlerForAudience(*target, trust, cfg, *audience, store, reg)
+		replay,err:=revocation.Open(*replayDir)
+		if err!=nil { log.Fatalf("open replay store failed: %v",err) }
+		handler, err := proxy.NewHandlerForAudience(*target, trust, cfg, *audience, store, reg,replay)
 		if err != nil {
 			log.Fatalf("proxy setup failed: %v", err)
 		}
@@ -305,9 +346,11 @@ Usage:
   kgaga keys-list                                           List non-retired keys as JWKS
   kgaga key-retire --kid <id>                                Permanently retire a signing key
   kgaga agents-init                                         Initialize the agent registry once
-  kgaga agent-register --agent <id> --owner <id> --scopes <s1,s2> --audiences <a1,a2>
+  kgaga agent-register --agent <id> --owner <id> --scopes <s1,s2> --audiences <a1,a2> --holder-public <pem>
   kgaga agent-inspect --agent <id>                            Inspect a registered agent
   kgaga agent-suspend --agent <id>                            Permanently suspend an agent ID
+  kgaga replay-init                                         Initialize the dedicated replay store
+  kgaga proof --holder-key <pem> --method GET --target <path>  Sign request proof from passport on stdin
   kgaga revocations-init                                    Initialize the local revocation store once
   kgaga revoke --id <jti>                                    Revoke a passport
   kgaga verify --audience <service>                          Verify a passport from stdin and check revocation

@@ -95,3 +95,16 @@ func (s *Store) Revoke(id string) error {
 	if err:=f.Close(); err!=nil { return err }
 	return s.ready()
 }
+
+// Consume records a single-use nonce. Unlike Revoke, it rejects existing
+// markers. Use a dedicated store, never the credential revocation directory.
+func (s *Store) Consume(id string) error {
+	path,err:=s.marker(id)
+	if err!=nil { return err }
+	f,err:=os.OpenFile(path,os.O_WRONLY|os.O_CREATE|os.O_EXCL,0600)
+	if os.IsExist(err) { return ErrRevoked }
+	if err!=nil { return err }
+	if err:=f.Sync(); err!=nil { _=f.Close(); return err }
+	if err:=f.Close(); err!=nil { return err }
+	return s.ready()
+}

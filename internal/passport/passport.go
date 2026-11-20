@@ -13,7 +13,12 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+type Confirmation struct {
+	Thumbprint string `json:"jkt"`
+}
+
 type AgentClaims struct {
+	Confirmation *Confirmation `json:"cnf,omitempty"`
 	AgentID string   `json:"agent_id"`
 	Owner   string   `json:"owner"`
 	Scopes  []string `json:"scopes"`

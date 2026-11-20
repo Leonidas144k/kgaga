@@ -43,21 +43,22 @@ const maxRequestBytes = 1 << 20
 
 // NewHandler retains the legacy verifier for explicit internal compatibility.
 func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config) (http.Handler, error) {
-	return newHandler(targetURL, pubKey, cfg, "", nil, nil, nil)
+	return newHandler(targetURL, pubKey, cfg, "", nil, nil, nil, nil)
 }
 
 // NewHandlerForAudience enforces v2 passports without a legacy fallback.
-func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store) (http.Handler, error) {
+func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, replay *revocation.Store) (http.Handler, error) {
 	if err := passport.ValidateAudience(audience); err != nil {
 		return nil, err
 	}
 	if err := store.Ready(); err != nil { return nil, err }
 	if err:=reg.Ready(); err!=nil { return nil,err }
 	if err:=trust.Ready(); err!=nil { return nil,err }
-	return newHandler(targetURL, nil, cfg, audience, store, reg, trust)
+	if err:=replay.Ready(); err!=nil { return nil,err }
+	return newHandler(targetURL, nil, cfg, audience, store, reg, trust, replay)
 }
 
-func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, trust *keyring.Store) (http.Handler, error) {
+func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, trust *keyring.Store, replay *revocation.Store) (http.Handler, error) {
 	target, err := url.Parse(targetURL)
 	if err != nil {
 		return nil, err
@@ -90,6 +91,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			}
 			pr.Out.Header.Del("X-Agent-Passport")
 			pr.Out.Header.Del("X-Kgaga-Passport")
+			pr.Out.Header.Del(passport.ProofHeader)
 		},
 	}
 	mux := http.NewServeMux()
@@ -151,8 +153,11 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			}
 		}
 
+		var holder ed25519.PublicKey
 		if audience != "" {
-			if err:=reg.Authorize(claims.AgentID,claims.Owner,claims.Scopes,audience); err!=nil {
+			var err error
+			holder,err=reg.BoundHolder(claims,audience)
+			if err!=nil {
 				status:=http.StatusServiceUnavailable
 				reason:="agent registry unavailable"
 				if errors.Is(err,registry.ErrDenied) { status=http.StatusForbidden; reason="agent authorization denied" }
@@ -176,6 +181,30 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 				emitAudit(AuditEvent{AgentID: claims.AgentID, Owner: claims.Owner, Method: r.Method, Path: r.URL.Path, Decision: "BLOCK", Reason: "request body rejected", Scopes: claims.Scopes})
 				http.Error(w, "request body rejected", status)
 				return
+			}
+		}
+
+		if audience!="" {
+			// Reject ambiguous bound headers, content encodings and request-target
+			// normalization before validating the exact received body.
+			for _,name:=range []string{passport.ProofHeader,"Content-Type","MCP-Protocol-Version","Mcp-Method","Mcp-Session-Id"} {
+				if len(r.Header.Values(name))>1 { http.Error(w,"ambiguous proof header",400); return }
+			}
+			if r.Header.Get("Content-Encoding")!="" || r.RequestURI!=r.URL.RequestURI() || len(r.Trailer)>0 {
+				http.Error(w,"unsupported request encoding or target",400); return
+			}
+			binding:=passport.RequestBinding{Method:r.Method,Target:r.URL.RequestURI(),ContentType:r.Header.Get("Content-Type"),MCPVersion:r.Header.Get("MCP-Protocol-Version"),MCPMethod:r.Header.Get("Mcp-Method"),MCPSession:r.Header.Get("Mcp-Session-Id"),Body:bodyBytes}
+			nonce,err:=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now())
+			if err!=nil {
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"BLOCK",Reason:"request proof rejected"})
+				http.Error(w,"request proof rejected",403); return
+			}
+			if err:=replay.Consume(nonce); err!=nil {
+				status:=503
+				reason:="replay store unavailable"
+				if errors.Is(err,revocation.ErrRevoked) { status=403; reason="request proof replayed" }
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"BLOCK",Reason:reason})
+				http.Error(w,reason,status); return
 			}
 		}
 

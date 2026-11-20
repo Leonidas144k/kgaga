@@ -34,7 +34,8 @@ expect_failure() {
 expect_failure "open agent registry failed" "$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:read --audience support-api
 "$kgaga" agents-init
 expect_failure "mint rejected: agent authorization denied" "$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:read --audience support-api
-"$kgaga" agent-register --agent smoke-agent --owner ops@example.com --scopes db:read --audiences support-api
+"$kgaga" key-generate --out holder
+"$kgaga" agent-register --agent smoke-agent --owner ops@example.com --scopes db:read --audiences support-api --holder-public holder/kgaga.pub
 "$kgaga" agent-inspect --agent smoke-agent | python3 -c 'import json,sys; a=json.load(sys.stdin); assert a["agent_id"]=="smoke-agent" and not a["suspended"]'
 expect_failure "mint rejected: agent authorization denied" "$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:write --audience support-api
 "$kgaga" keys-init
@@ -44,7 +45,11 @@ token=$("$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:re
 # Missing state must not silently become an empty revocation store.
 expect_failure "open revocation store failed" "$kgaga" verify --audience support-api <<< "$token"
 "$kgaga" revocations-init
+"$kgaga" replay-init
 claims=$("$kgaga" verify --audience support-api <<< "$token")
+printf '%s\n' "$claims" | python3 -c 'import json,sys; assert len(json.load(sys.stdin)["cnf"]["jkt"])==43'
+proof=$("$kgaga" proof --holder-key holder/kgaga.key --method GET --target /api/db <<< "$token")
+[[ "$proof" == v1.* ]]
 jti=$(python3 -c 'import json,sys; c=json.load(sys.stdin); assert c["agent_id"]=="smoke-agent" and c["aud"]==["support-api"]; print(c["jti"])' <<< "$claims")
 expect_failure "passport verification failed" "$kgaga" verify --audience payments-api <<< "$token"
 "$kgaga" revoke --id "$jti"
@@ -65,4 +70,4 @@ fresh="$rotated"
 "$kgaga" agent-suspend --agent smoke-agent
 expect_failure "passport rejected: agent authorization denied: suspended agent" "$kgaga" verify --audience support-api <<< "$fresh"
 expect_failure "mint rejected: agent authorization denied: suspended agent" "$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:read --audience support-api
-echo "PASS: registration, scope limits, issuance, audience binding, revocation, key rotation and agent suspension"
+echo "PASS: registration, scope limits, issuance, audience binding, revocation, key rotation, holder binding, proof generation and agent suspension"

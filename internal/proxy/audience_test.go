@@ -23,9 +23,22 @@ func TestAudienceGateway(t *testing.T) {
 	if err := passport.GenerateKeyPair(priv,pub); err != nil { t.Fatal(err) }
 	key, err := passport.LoadPublicKey(pub)
 	if err != nil { t.Fatal(err) }
+	holderPriv,holderPub:=filepath.Join(dir,"holder.key"),filepath.Join(dir,"holder.pub")
+	if err:=passport.GenerateKeyPair(holderPriv,holderPub); err!=nil { t.Fatal(err) }
+	holder,err:=passport.LoadPublicKey(holderPub)
+	if err!=nil { t.Fatal(err) }
+	encoded,err:=registry.EncodeHolder(holder)
+	if err!=nil { t.Fatal(err) }
+	sign:=func(r *http.Request,token string) string {
+		t.Helper()
+		p,err:=passport.SignRequest(holderPriv,token,passport.RequestBinding{Method:r.Method,Target:r.URL.RequestURI()},time.Now())
+		if err!=nil { t.Fatal(err) }
+		r.Header.Set(passport.ProofHeader,p)
+		return p
+	}
 	mint := func(aud string) string {
 		t.Helper()
-		raw, err := passport.MintV2(priv,"agent","owner",[]string{"db:read"},aud,time.Minute)
+		raw, err := passport.MintBoundV2(priv,"agent","owner",[]string{"db:read"},aud,time.Minute,holder)
 		if err != nil { t.Fatal(err) }
 		return raw
 	}
@@ -34,7 +47,7 @@ func TestAudienceGateway(t *testing.T) {
 	var calls atomic.Int32
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
 		calls.Add(1)
-		if r.Header.Get("X-Agent-Passport") != "" || r.Header.Get("X-Kgaga-Passport") != "" { t.Error("credential leaked upstream") }
+		if r.Header.Get("X-Agent-Passport") != "" || r.Header.Get("X-Kgaga-Passport") != "" || r.Header.Get(passport.ProofHeader)!="" { t.Error("credential leaked upstream") }
 		if r.Header.Get("X-Kgaga-Verified-Agent") != "agent" || r.Header.Get("X-Pangolin-Verified-Agent") != "agent" ||
 			r.Header.Get("X-Kgaga-Agent-Owner") != "owner" || r.Header.Get("X-Pangolin-Agent-Owner") != "owner" { t.Error("verified identity missing or spoofed") }
 		w.WriteHeader(http.StatusNoContent)
@@ -49,18 +62,23 @@ func TestAudienceGateway(t *testing.T) {
 	if err:=registry.Init(regPath); err!=nil { t.Fatal(err) }
 	reg,err:=registry.Open(regPath)
 	if err!=nil { t.Fatal(err) }
-	if err:=reg.Register(registry.Agent{ID:"agent",Owner:"owner",Scopes:[]string{"db:read"},Audiences:[]string{"service-a"}}); err!=nil { t.Fatal(err) }
+	if err:=reg.Register(registry.Agent{ID:"agent",Owner:"owner",Scopes:[]string{"db:read"},Audiences:[]string{"service-a"},HolderKey:encoded}); err!=nil { t.Fatal(err) }
 	trustPath:=filepath.Join(dir,"trust")
 	if err:=keyring.Init(trustPath); err!=nil { t.Fatal(err) }
 	trust,err:=keyring.Open(trustPath)
 	if err!=nil { t.Fatal(err) }
 	oldID,err:=trust.Trust(key)
 	if err!=nil { t.Fatal(err) }
-	if _,err:=NewHandlerForAudience(up.URL,nil,cfg,"service-a",store,reg); err==nil { t.Fatal("accepted absent trust store") }
-	if _,err:=NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,nil); err==nil { t.Fatal("accepted absent registry") }
-	if _,err := NewHandlerForAudience(up.URL,trust,cfg,"service-a",nil,reg); err==nil { t.Fatal("accepted missing revocation store") }
-	if _,err := NewHandlerForAudience(up.URL,trust,cfg,"",store,reg); err == nil { t.Fatal("accepted empty audience") }
-	h,err := NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,reg)
+	replayPath:=filepath.Join(dir,"replay")
+	if err:=revocation.Init(replayPath); err!=nil { t.Fatal(err) }
+	replay,err:=revocation.Open(replayPath)
+	if err!=nil { t.Fatal(err) }
+	if _,err:=NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,reg,nil); err==nil { t.Fatal("accepted missing replay store") }
+	if _,err:=NewHandlerForAudience(up.URL,nil,cfg,"service-a",store,reg,replay); err==nil { t.Fatal("accepted absent trust store") }
+	if _,err:=NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,nil,replay); err==nil { t.Fatal("accepted absent registry") }
+	if _,err := NewHandlerForAudience(up.URL,trust,cfg,"service-a",nil,reg,replay); err==nil { t.Fatal("accepted missing revocation store") }
+	if _,err := NewHandlerForAudience(up.URL,trust,cfg,"",store,reg,replay); err == nil { t.Fatal("accepted empty audience") }
+	h,err := NewHandlerForAudience(up.URL,trust,cfg,"service-a",store,reg,replay)
 	if err != nil { t.Fatal(err) }
 	for _,tc := range []struct{ name, token string; duplicate bool; want int }{
 		{"wrong audience",mint("service-b"),false,403},
@@ -71,6 +89,7 @@ func TestAudienceGateway(t *testing.T) {
 		t.Run(tc.name,func(t *testing.T){
 			r:=httptest.NewRequest("GET","/api/db",nil)
 			r.Header.Set("X-Agent-Passport",tc.token)
+			sign(r,tc.token)
 			if tc.duplicate { r.Header.Add("X-Agent-Passport",tc.token) }
 			r.Header.Set("X-Kgaga-Passport","untrusted")
 			r.Header.Set("X-Kgaga-Verified-Agent","spoofed")
@@ -89,6 +108,7 @@ func TestAudienceGateway(t *testing.T) {
 		t.Helper()
 		r:=httptest.NewRequest("GET","/api/db",nil)
 		r.Header.Set("X-Agent-Passport",token)
+		sign(r,token)
 		w:=httptest.NewRecorder()
 		h.ServeHTTP(w,r)
 		if w.Code!=want { t.Fatalf("status %d want %d",w.Code,want) }
@@ -97,7 +117,7 @@ func TestAudienceGateway(t *testing.T) {
 	if err:=store.Revoke(claims.ID); err!=nil { t.Fatal(err) }
 	check(raw,403)
 	for _,a:=range []struct{id,owner,scope string}{{"unknown","owner","db:read"},{"agent","other","db:read"},{"agent","owner","db:write"}} {
-		raw,err:=passport.MintV2(priv,a.id,a.owner,[]string{a.scope},"service-a",time.Minute)
+		raw,err:=passport.MintBoundV2(priv,a.id,a.owner,[]string{a.scope},"service-a",time.Minute,holder)
 		if err!=nil { t.Fatal(err) }
 		check(raw,403)
 	}
@@ -107,7 +127,7 @@ func TestAudienceGateway(t *testing.T) {
 	if err!=nil { t.Fatal(err) }
 	newID,err:=trust.Trust(newKey)
 	if err!=nil { t.Fatal(err) }
-	fresh,err:=passport.MintV2(newPriv,"agent","owner",[]string{"db:read"},"service-a",time.Minute)
+	fresh,err:=passport.MintBoundV2(newPriv,"agent","owner",[]string{"db:read"},"service-a",time.Minute,holder)
 	if err!=nil { t.Fatal(err) }
 	check(fresh,204)
 	old:=mint("service-a")
@@ -115,13 +135,33 @@ func TestAudienceGateway(t *testing.T) {
 	if err:=trust.Retire(oldID); err!=nil { t.Fatal(err) }
 	check(old,403)
 	check(fresh,204)
+	r:=httptest.NewRequest("GET","/api/db",nil)
+	r.Header.Set("X-Agent-Passport",fresh)
+	w0:=httptest.NewRecorder()
+	h.ServeHTTP(w0,r)
+	if w0.Code!=403 { t.Fatal("accepted missing proof") }
+	p:=sign(r,fresh)
+	request:=func(target string,proof string,want int) {
+		t.Helper()
+		r:=httptest.NewRequest("GET",target,nil)
+		r.Header.Set("X-Agent-Passport",fresh)
+		r.Header.Set(passport.ProofHeader,proof)
+		w:=httptest.NewRecorder()
+		h.ServeHTTP(w,r)
+		if w.Code!=want { t.Fatalf("proof status %d want %d",w.Code,want) }
+	}
+	request("/api/db?changed=1",p,403)
+	request("/api/db",p,204)
+	request("/api/db",p,403)
+	if err:=os.Rename(replayPath,replayPath+"-backup"); err!=nil { t.Fatal(err) }
+	check(fresh,503)
 	if err:=reg.Suspend("agent"); err!=nil { t.Fatal(err) }
 	check(fresh,403)
 	if err:=os.Rename(regPath,regPath+"-backup"); err!=nil { t.Fatal(err) }
 	check(fresh,503)
 	if err:=os.Rename(storePath,storePath+"-backup"); err!=nil { t.Fatal(err) }
 	check(fresh,503)
-	if calls.Load()!=5 { t.Fatalf("upstream calls %d want 5",calls.Load()) }
+	if calls.Load()!=6 { t.Fatalf("upstream calls %d want 6",calls.Load()) }
 	w:=httptest.NewRecorder()
 	h.ServeHTTP(w,httptest.NewRequest("GET","/.well-known/jwks.json",nil))
 	var jwks passport.JWKS
