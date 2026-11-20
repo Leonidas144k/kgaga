@@ -17,6 +17,7 @@ import (
 	"github.com/Leonidas144k/kgaga/internal/revocation"
 	"github.com/Leonidas144k/kgaga/internal/registry"
 	"github.com/Leonidas144k/kgaga/internal/keyring"
+	"github.com/Leonidas144k/kgaga/internal/delegation"
 	"path/filepath"
 )
 
@@ -201,6 +202,49 @@ func main() {
 		if _,err:=trust.Verify(token,*audience); err!=nil { log.Fatalf("mint rejected: %v",err) }
 		fmt.Println(token)
 
+	case "delegate-sign":
+		fs:=flag.NewFlagSet("delegate-sign",flag.ExitOnError)
+		key:=fs.String("holder-key","","Parent private signing key")
+		child:=fs.String("child","","Child agent identifier")
+		owner:=fs.String("owner","","Shared owner")
+		scopes:=fs.String("scopes","","Exact delegated scopes")
+		aud:=fs.String("audience","","Shared audience")
+		pub:=fs.String("child-public","","Child public PEM")
+		exp:=fs.Int64("expires",0,"Absolute Unix expiry seconds")
+		fs.Parse(os.Args[2:])
+		parent:=readPassport()
+		holder,err:=passport.LoadPublicKey(*pub)
+		if err!=nil { log.Fatalf("load child key failed: %v",err) }
+		id,err:=passport.KeyID(holder)
+		if err!=nil { log.Fatal(err) }
+		sig,err:=passport.SignGrant(*key,parent,*child,*owner,strings.Split(*scopes,","),*aud,id,*exp)
+		if err!=nil { log.Fatalf("sign grant failed: %v",err) }
+		fmt.Println(sig)
+
+	case "delegate":
+		fs:=flag.NewFlagSet("delegate",flag.ExitOnError)
+		signingKey:=fs.String("signing-key","kgaga.key","Issuer private key")
+		trustDir:=fs.String("trust",keyring.DefaultDir,"Public trust directory")
+		regDir:=fs.String("registry",registry.DefaultDir,"Registry directory")
+		revDir:=fs.String("revocations",revocation.DefaultDir,"Revocation directory")
+		child:=fs.String("child","","Child agent identifier")
+		owner:=fs.String("owner","","Shared owner")
+		scopes:=fs.String("scopes","","Exact delegated scopes")
+		aud:=fs.String("audience","","Shared audience")
+		exp:=fs.Int64("expires",0,"Absolute Unix expiry seconds")
+		sig:=fs.String("grant","","Parent grant signature")
+		fs.Parse(os.Args[2:])
+		parent:=readPassport()
+		trust,err:=keyring.Open(*trustDir)
+		if err!=nil { log.Fatal(err) }
+		reg,err:=registry.Open(*regDir)
+		if err!=nil { log.Fatal(err) }
+		rev,err:=revocation.Open(*revDir)
+		if err!=nil { log.Fatal(err) }
+		raw,err:=delegation.Issue(*signingKey,*child,*owner,strings.Split(*scopes,","),*aud,passport.Delegation{Parent:parent,Signature:*sig,Expires:*exp},trust,reg,rev)
+		if err!=nil { log.Fatalf("delegate rejected: %v",err) }
+		fmt.Println(raw)
+
 	case "revocations-init":
 		fs := flag.NewFlagSet("revocations-init", flag.ExitOnError)
 		dir := fs.String("revocations", revocation.DefaultDir, "Revocation store directory")
@@ -247,6 +291,7 @@ func main() {
 		reg,err:=registry.Open(*registryDir)
 		if err!=nil { log.Fatalf("open agent registry failed: %v",err) }
 		if _,err:=reg.BoundHolder(claims,*audience); err!=nil { log.Fatalf("passport rejected: %v",err) }
+		if err:=delegation.Check(claims,*audience,trust,reg,store); err!=nil { log.Fatalf("passport rejected: %v",err) }
 		if err := json.NewEncoder(os.Stdout).Encode(claims); err != nil {
 			log.Fatalf("write claims failed: %v", err)
 		}
@@ -360,6 +405,12 @@ func main() {
 	}
 }
 
+func readPassport() string {
+	raw,err:=io.ReadAll(io.LimitReader(os.Stdin,(16<<10)+2))
+	if err!=nil || len(raw)>=(16<<10)+2 { log.Fatal("invalid passport input") }
+	return strings.TrimSpace(string(raw))
+}
+
 func printUsage() {
 	fmt.Println(`Kgaga — Cryptographic Identity & Guardrails for AI Agents
 
@@ -379,6 +430,8 @@ Usage:
   kgaga agent-suspend --agent <id>                            Permanently suspend an agent ID
   kgaga replay-init                                         Initialize the dedicated replay store
   kgaga proof --holder-key <pem> --method GET --target <path>  Sign request proof from passport on stdin
+  kgaga delegate-sign --holder-key <pem> --child <id> --owner <id> --scopes <scopes> --audience <service> --child-public <pem> --expires <unix>  Sign grant using parent passport on stdin
+  kgaga delegate --child <id> --owner <id> --scopes <scopes> --audience <service> --expires <unix> --grant <signature>  Issue delegated passport using parent on stdin
   kgaga revocations-init                                    Initialize the local revocation store once
   kgaga revoke --id <jti>                                    Revoke a passport
   kgaga verify --audience <service>                          Verify a passport from stdin and check revocation

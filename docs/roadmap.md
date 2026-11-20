@@ -48,3 +48,7 @@ Holder confirmation in passports, immutable registered agent public key, strict 
 ### Identity increment 6
 
 Operator-issued single-use enrolment challenges, holder signatures over full proposed registration, expiry, replay rejection, concurrency tests and CLI lifecycle coverage. This is possession at enrolment, not independent workload or hardware attestation. Existing holder-bound identities remain compatible. Delegation and external attestation pending; validation pending.
+
+### Identity increment 7
+
+One-hop issuer-mediated delegation with explicit parent scope, signed parent grant, exact child holder binding, same owner/audience, permission subset, bounded expiry and parent lifecycle checks. Separate JWT type prevents old verifiers accepting the new format. Reusable grants are not independently revocable; parent revocation disables descendants. No nested delegation. Tests pending CI and local validation. Independent workload attestation remains unimplemented.

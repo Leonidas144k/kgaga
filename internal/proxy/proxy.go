@@ -18,6 +18,7 @@ import (
 	"github.com/Leonidas144k/kgaga/internal/revocation"
 	"github.com/Leonidas144k/kgaga/internal/registry"
 	"github.com/Leonidas144k/kgaga/internal/keyring"
+	"github.com/Leonidas144k/kgaga/internal/delegation"
 )
 
 type AuditEvent struct {
@@ -162,6 +163,17 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 				reason:="agent registry unavailable"
 				if errors.Is(err,registry.ErrDenied) { status=http.StatusForbidden; reason="agent authorization denied" }
 				emitAudit(AuditEvent{AgentID:claims.AgentID,Owner:claims.Owner,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"BLOCK",Reason:reason})
+				http.Error(w,reason,status)
+				return
+			}
+		}
+
+		if audience!="" {
+			if err:=delegation.Check(claims,audience,trust,reg,store); err!=nil {
+				status:=http.StatusServiceUnavailable
+				reason:="delegation state unavailable"
+				if errors.Is(err,delegation.ErrDenied) { status=http.StatusForbidden; reason="delegation denied" }
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"BLOCK",Reason:reason})
 				http.Error(w,reason,status)
 				return
 			}

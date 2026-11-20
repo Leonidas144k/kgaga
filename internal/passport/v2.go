@@ -16,6 +16,7 @@ import (
 
 const IssuerV2 = "kgaga-ca"
 const PassportTypeV2 = "kgaga-passport+jwt"
+const DelegatedType = "kgaga-delegated+jwt"
 const MaxTTL = time.Hour
 const maxTokenSize = 16 << 10
 
@@ -70,17 +71,24 @@ func ValidateIdentity(agent, owner string, scopes []string) error {
 
 // MintV2 issues an audience-bound passport, with no fallback to the legacy issuer.
 func MintV2(privPath, agent, owner string, scopes []string, audience string, ttl time.Duration) (string, error) {
-	return mintV2(privPath,agent,owner,scopes,audience,ttl,nil)
+	return mintV2(privPath,agent,owner,scopes,audience,ttl,nil,nil)
 }
 
 // MintBoundV2 binds a passport to an independently held Ed25519 key.
 func MintBoundV2(privPath, agent, owner string, scopes []string, audience string, ttl time.Duration, holder ed25519.PublicKey) (string,error) {
 	id,err:=KeyID(holder)
 	if err!=nil { return "",err }
-	return mintV2(privPath,agent,owner,scopes,audience,ttl,&Confirmation{Thumbprint:id})
+	return mintV2(privPath,agent,owner,scopes,audience,ttl,&Confirmation{Thumbprint:id},nil)
 }
 
-func mintV2(privPath, agent, owner string, scopes []string, audience string, ttl time.Duration, confirmation *Confirmation) (string,error) {
+// MintDelegated is a signing primitive; the caller must validate the grant.
+func MintDelegated(privPath,agent,owner string,scopes []string,audience string,holder ed25519.PublicKey,d Delegation) (string,error) {
+	id,err:=KeyID(holder)
+	if err!=nil { return "",err }
+	return mintV2(privPath,agent,owner,scopes,audience,time.Second,&Confirmation{Thumbprint:id},&d)
+}
+
+func mintV2(privPath, agent, owner string, scopes []string, audience string, ttl time.Duration, confirmation *Confirmation, delegation *Delegation) (string,error) {
 	if err := ValidateAudience(audience); err != nil {
 		return "", err
 	}
@@ -104,7 +112,12 @@ func mintV2(privPath, agent, owner string, scopes []string, audience string, ttl
 		return "", err
 	}
 	now := time.Now().UTC().Truncate(time.Second)
+	if delegation!=nil {
+		ttl=time.Unix(delegation.Expires,0).Sub(now)
+		if ttl<time.Second || ttl>MaxTTL { return "",errors.New("invalid delegated expiry") }
+	}
 	claims := AgentClaims{
+		Delegation:delegation,
 		Confirmation:confirmation,
 		AgentID: agent, Owner: owner, Scopes: append([]string(nil), scopes...),
 		RegisteredClaims: jwt.RegisteredClaims{
@@ -116,6 +129,7 @@ func mintV2(privPath, agent, owner string, scopes []string, audience string, ttl
 	t := jwt.NewWithClaims(jwt.SigningMethodEdDSA, claims)
 	t.Header["kid"] = kid
 	t.Header["typ"] = PassportTypeV2
+	if delegation!=nil { t.Header["typ"]=DelegatedType }
 	signed, err := t.SignedString(key)
 	if err == nil && len(signed) > maxTokenSize {
 		return "", errors.New("passport exceeds size limit")
@@ -138,7 +152,7 @@ func VerifyV2(raw string, key ed25519.PublicKey, audience string) (*AgentClaims,
 	}
 	c := &AgentClaims{}
 	t, err := jwt.ParseWithClaims(raw, c, func(t *jwt.Token) (any, error) {
-		if t.Header["kid"] != kid || t.Header["typ"] != PassportTypeV2 {
+		if t.Header["kid"] != kid || (t.Header["typ"] != PassportTypeV2 && t.Header["typ"] != DelegatedType) {
 			return nil, errors.New("passport key ID or type mismatch")
 		}
 		if _, critical := t.Header["crit"]; critical {
@@ -153,6 +167,7 @@ func VerifyV2(raw string, key ed25519.PublicKey, audience string) (*AgentClaims,
 	if t == nil || !t.Valid {
 		return nil, errors.New("invalid passport signature")
 	}
+	if (t.Header["typ"]==DelegatedType)!=(c.Delegation!=nil) { return nil,errors.New("delegation type mismatch") }
 	if len(c.Audience) != 1 || c.Audience[0] != audience {
 		return nil, errors.New("passport must have exactly one matching audience")
 	}
@@ -172,6 +187,11 @@ func VerifyV2(raw string, key ed25519.PublicKey, audience string) (*AgentClaims,
 	if c.Confirmation!=nil {
 		b,err:=base64.RawURLEncoding.Strict().DecodeString(c.Confirmation.Thumbprint)
 		if err!=nil || len(b)!=32 || c.Confirmation.Thumbprint==kid { return nil,errors.New("invalid holder confirmation") }
+	}
+	if c.Delegation!=nil {
+		if c.Confirmation==nil || c.Delegation.Expires!=c.ExpiresAt.Unix() || len(c.Delegation.Parent)==0 || len(c.Delegation.Parent)>maxTokenSize || len(c.Delegation.Signature)!=86 {
+			return nil,errors.New("invalid delegation claim")
+		}
 	}
 	return c, nil
 }

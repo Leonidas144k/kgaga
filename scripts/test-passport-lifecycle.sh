@@ -75,4 +75,23 @@ fresh="$rotated"
 "$kgaga" agent-suspend --agent smoke-agent
 expect_failure "passport rejected: agent authorization denied: suspended agent" "$kgaga" verify --audience support-api <<< "$fresh"
 expect_failure "mint rejected: agent authorization denied: suspended agent" "$kgaga" mint --agent smoke-agent --owner ops@example.com --scopes db:read --audience support-api
-echo "PASS: attested enrolment, scope limits, issuance, audience binding, revocation, key rotation, holder binding, proof generation and agent suspension"
+# Exercise delegation with separate keys and enrolled identities.
+"$kgaga" key-generate --out parent-holder
+"$kgaga" key-generate --out child-holder
+for name in parent child; do
+  scopes=db:read
+  if [[ "$name" == parent ]]; then scopes=db:read,kgaga:delegate; fi
+  ch=$("$kgaga" agent-challenge --agent "$name")
+  sig=$("$kgaga" agent-sign-enrolment --holder-key "$name-holder/kgaga.key" --challenge "$ch" --agent "$name" --owner ops@example.com --scopes "$scopes" --audiences support-api)
+  "$kgaga" agent-register --agent "$name" --owner ops@example.com --scopes "$scopes" --audiences support-api --holder-public "$name-holder/kgaga.pub" --challenge "$ch" --enrolment-proof "$sig"
+done
+parent=$("$kgaga" mint --signing-key replacement/kgaga.key --agent parent --owner ops@example.com --scopes db:read,kgaga:delegate --audience support-api)
+parent_claims=$("$kgaga" verify --audience support-api <<< "$parent")
+parent_id=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["jti"])' <<< "$parent_claims")
+expiry=$(python3 -c 'import time; print(int(time.time())+120)')
+grant=$("$kgaga" delegate-sign --holder-key parent-holder/kgaga.key --child child --owner ops@example.com --scopes db:read --audience support-api --child-public child-holder/kgaga.pub --expires "$expiry" <<< "$parent")
+child=$("$kgaga" delegate --signing-key replacement/kgaga.key --child child --owner ops@example.com --scopes db:read --audience support-api --expires "$expiry" --grant "$grant" <<< "$parent")
+"$kgaga" verify --audience support-api <<< "$child" >/dev/null
+"$kgaga" revoke --id "$parent_id"
+expect_failure "passport rejected: delegation denied" "$kgaga" verify --audience support-api <<< "$child"
+echo "PASS: attested enrolment, passport lifecycle, key rotation, holder proofs, agent suspension and one-hop delegation"

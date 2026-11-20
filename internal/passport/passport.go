@@ -17,7 +17,14 @@ type Confirmation struct {
 	Thumbprint string `json:"jkt"`
 }
 
+type Delegation struct {
+	Parent string `json:"parent"`
+	Signature string `json:"signature"`
+	Expires int64 `json:"expires"`
+}
+
 type AgentClaims struct {
+	Delegation *Delegation `json:"delegation,omitempty"`
 	Confirmation *Confirmation `json:"cnf,omitempty"`
 	AgentID string   `json:"agent_id"`
 	Owner   string   `json:"owner"`
