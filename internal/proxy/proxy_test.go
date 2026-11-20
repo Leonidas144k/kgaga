@@ -34,6 +34,7 @@ func TestGatewaySecurity(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		forwarded.Add(1)
 		if r.Header.Get("X-Pangolin-Verified-Agent") != "test-agent" { t.Error("missing verified identity") }
+		if r.URL.Path=="/mcp" { w.Header().Set("Content-Type","application/json"); _,_=w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`)); return }
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer up.Close()
@@ -56,7 +57,7 @@ func TestGatewaySecurity(t *testing.T) {
 		{"denied tool", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"drop_table\"}}", "", 403},
 		{"missing scope", "POST", "/mcp", mint([]string{"db:read"}, time.Minute), "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "", 403},
 		{"valid HTTP", "GET", "/api/db", valid, "", "", 204},
-		{"valid MCP", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "", 204},
+		{"valid MCP", "POST", "/mcp", valid, "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"search\"}}", "", 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			before := forwarded.Load()

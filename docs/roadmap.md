@@ -72,3 +72,7 @@ Strict bounded JSON-RPC HTTP inspector, full-tree duplicate key detection, exact
 ### Gateway increment 4
 
 Replace unsigned stdio wrapper with authenticated single-passport signed frames, per-message identity and replay checks, strict shared MCP parser, lockstep response-ID validation, bounded child pipe I/O, and CLI smoke coverage. No transparent native client support, OS sandbox, full-duplex session, or production assurance. Increment 3 passed local and CI at 3c0955e; increment 4 validation pending.
+
+### Gateway increment 5
+
+Bounded HTTP exchange with explicit forwarding header allowlists, no redirects or streaming, restricted UTF-8 JSON/text bodies, request/response secret-pattern checks including decoded JSON and query values, strict MCP response IDs, lifecycle recheck before response release, and signed gateway regression tests. Increment 4 passed local/CI at 6dced6b. Increment 5 validation pending. No comprehensive DLP or aggregate concurrency/security guarantee.

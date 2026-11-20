@@ -52,7 +52,26 @@ func TestAudienceGateway(t *testing.T) {
 		if r.Header.Get("X-Agent-Passport") != "" || r.Header.Get("X-Kgaga-Passport") != "" || r.Header.Get(passport.ProofHeader)!="" { t.Error("credential leaked upstream") }
 		if r.Header.Get("X-Kgaga-Verified-Agent") != "agent" || r.Header.Get("X-Pangolin-Verified-Agent") != "agent" ||
 			r.Header.Get("X-Kgaga-Agent-Owner") != "owner" || r.Header.Get("X-Pangolin-Agent-Owner") != "owner" { t.Error("verified identity missing or spoofed") }
-		w.WriteHeader(http.StatusNoContent)
+		if r.URL.Path=="/mcp" {
+			var req map[string]any
+			if err:=json.NewDecoder(r.Body).Decode(&req); err!=nil { t.Error("invalid forwarded request") }
+			w.Header().Set("Content-Type","application/json")
+			switch req["id"] {
+			case float64(2): _,_=w.Write([]byte(`{"jsonrpc":"2.0","id":999,"result":{}}`))
+			case float64(3): _,_=w.Write([]byte(`{"jsonrpc":"2.0","id":3,"result":{"value":"\u0073k-abcdefghijklmnopqrstuvwxyz"}}`))
+			default: _,_=w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{}}`))
+			}
+			return
+		}
+		if r.Header.Get("Authorization")!="" || r.Header.Get("Cookie")!="" || r.Header.Get("X-Unknown")!="" { t.Error("unapproved request header forwarded") }
+		switch r.URL.Query().Get("response") {
+		case "redirect": w.Header().Set("Location","/api/db"); w.WriteHeader(302)
+		case "large": w.Header().Set("Content-Type","text/plain"); _,_=w.Write([]byte(strings.Repeat("a",maxResponseBytes+1)))
+		case "encoded": w.Header().Set("Content-Encoding","gzip"); _,_=w.Write([]byte("encoded"))
+		case "secret": w.Header().Set("Content-Type","application/json"); _,_=w.Write([]byte(`{"value":"\u0073k-abcdefghijklmnopqrstuvwxyz"}`))
+		case "clean": w.Header().Set("Content-Type","application/json"); w.Header().Set("Set-Cookie","session=secret"); w.Header().Set("X-Secret","do not forward"); _,_=w.Write([]byte(`{"ok":true}`))
+		default: w.WriteHeader(http.StatusNoContent)
+		}
 	}))
 	defer up.Close()
 	cfg := &policy.Config{Version:"2",RedactSecrets:true,MCP:policy.MCPPolicy{AllowedTools:[]string{"search"},DeniedTools:[]string{"drop_table"}},Rules:[]policy.Rule{{PathPrefix:"/api/db",AllowedScopes:[]string{"db:read"},AllowedMethods:[]string{"GET"}}}}
@@ -106,7 +125,7 @@ func TestAudienceGateway(t *testing.T) {
 	mcpToken,err:=passport.MintBoundV2(priv,"agent","owner",[]string{"mcp:tool:search"},"service-a",time.Minute,holder)
 	if err!=nil { t.Fatal(err) }
 	for _,tc:=range []struct{body,name string; want int}{
-		{`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search"}}`,"search",204},
+		{`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search"}}`,"search",200},
 		{`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search","name":"drop_table"}}`,"",400},
 		{`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search"}}`,"other",400},
 		{`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"drop_table"}}`,"",403},
@@ -124,6 +143,35 @@ func TestAudienceGateway(t *testing.T) {
 		h.ServeHTTP(w,r)
 		if w.Code!=tc.want || (tc.want>=400 && calls.Load()!=before) { t.Fatalf("MCP status %d want %d",w.Code,tc.want) }
 		if tc.want>=400 && !json.Valid(w.Body.Bytes()) { t.Fatal("invalid MCP error response") }
+	}
+	// Response inspection happens after admission and does not leak rejected bytes.
+	for _,id:=range []string{"2","3"} {
+		body:=`{"jsonrpc":"2.0","id":`+id+`,"method":"tools/call","params":{"name":"search"}}`
+		r:=httptest.NewRequest("POST","/mcp",strings.NewReader(body))
+		r.Header.Set("X-Agent-Passport",mcpToken)
+		r.Header.Set("Content-Type","application/json")
+		p,err:=passport.SignRequest(holderPriv,mcpToken,passport.RequestBinding{Method:"POST",Target:"/mcp",ContentType:"application/json",Body:[]byte(body)},time.Now())
+		if err!=nil { t.Fatal(err) }
+		r.Header.Set(passport.ProofHeader,p)
+		w:=httptest.NewRecorder()
+		h.ServeHTTP(w,r)
+		if w.Code!=502 || !json.Valid(w.Body.Bytes()) || strings.Contains(w.Body.String(),"abcdefghijklmnopqrstuvwxyz") { t.Fatal("unsafe MCP response released") }
+	}
+	for _,tc:=range []struct{query string; want int; forwarded bool}{
+		{"response=redirect",502,true},{"response=large",502,true},{"response=encoded",502,true},{"response=secret",502,true},{"response=clean",200,true},{"value=%73k-abcdefghijklmnopqrstuvwxyz",403,false},
+	} {
+		r:=httptest.NewRequest("GET","/api/db?"+tc.query,nil)
+		token:=mint("service-a")
+		r.Header.Set("X-Agent-Passport",token)
+		r.Header.Set("Authorization","Bearer not-forwarded")
+		r.Header.Set("Cookie","session=not-forwarded")
+		r.Header.Set("X-Unknown","not-forwarded")
+		sign(r,token)
+		before:=calls.Load()
+		w:=httptest.NewRecorder()
+		h.ServeHTTP(w,r)
+		if w.Code!=tc.want || (calls.Load()!=before)!=tc.forwarded { t.Fatalf("response %s: got %d want %d",tc.query,w.Code,tc.want) }
+		if w.Header().Get("Location")!="" || w.Header().Get("Set-Cookie")!="" || w.Header().Get("X-Secret")!="" || strings.Contains(w.Body.String(),"abcdefghijklmnopqrstuvwxyz") { t.Fatal("unsafe response metadata or body released") }
 	}
 	// Possession of a valid passport and proof must not bypass route policy.
 	for _,tc:=range []struct{method,target,header,value string; want int}{
@@ -210,7 +258,7 @@ func TestAudienceGateway(t *testing.T) {
 	check(fresh,503)
 	if err:=os.Rename(storePath,storePath+"-backup"); err!=nil { t.Fatal(err) }
 	check(fresh,503)
-	if calls.Load()!=7 { t.Fatalf("upstream calls %d want 7",calls.Load()) }
+	if calls.Load()!=14 { t.Fatalf("upstream calls %d want 14",calls.Load()) }
 	w:=httptest.NewRecorder()
 	h.ServeHTTP(w,httptest.NewRequest("GET","/.well-known/jwks.json",nil))
 	var jwks passport.JWKS

@@ -1,14 +1,12 @@
 package proxy
 
 import (
-	"bytes"
 	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"io"
 	"log"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"strings"
 	"time"
@@ -82,22 +80,7 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 	}
 	if err != nil { return nil,err }
 
-	rp := &httputil.ReverseProxy{
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(target)
-			pr.SetXForwarded()
-			// These values have already been overwritten with verified claims.
-			// Add them after hop-by-hop header stripping.
-			for _, name := range []string{"X-Pangolin-Verified-Agent", "X-Pangolin-Agent-Owner", "X-Kgaga-Verified-Agent", "X-Kgaga-Agent-Owner"} {
-				pr.Out.Header.Set(name, pr.In.Header.Get(name))
-			}
-			pr.Out.Header.Del("X-Agent-Passport")
-			pr.Out.Header.Del("X-Kgaga-Passport")
-			pr.Out.Header.Del(passport.ProofHeader)
-			// Optional Mcp-Name is redundant and is not part of v1 proof binding.
-			pr.Out.Header.Del("Mcp-Name")
-		},
-	}
+	transport:=newUpstreamTransport()
 	serveJWKS := func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		current:=jwks
@@ -222,9 +205,10 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		}
 
 		isMCP := r.URL.Path == "/mcp"
+		var mcpInfo *mcp.InspectionResult
 
 		if isMCP {
-			mcpInfo, err := mcp.Inspect(r, bodyBytes)
+			mcpInfo, err = mcp.Inspect(r, bodyBytes)
 			if err != nil {
 				emitAudit(AuditEvent{
 					AgentID: claims.AgentID, Owner: claims.Owner, Method: r.Method,
@@ -255,31 +239,37 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 			}
 		}
 
-		redacted := false
-		if cfg.RedactSecrets && len(bodyBytes) > 0 {
-			cleaned, didRedact := policy.Redact(string(bodyBytes))
-			if isMCP && didRedact {
-				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"BLOCK",Reason:"MCP payload contains recognized secret pattern"})
-				writeMCPError(w,http.StatusForbidden,-32603,"MCP payload rejected by secret policy")
+		if err:=inspectRequest(r,bodyBytes,cfg.RedactSecrets); err!=nil {
+			status:=http.StatusBadRequest
+			if errors.Is(err,errSecret) { status=http.StatusForbidden }
+			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"request inspection rejected"})
+			if isMCP { writeMCPError(w,status,-32600,"MCP payload rejected by inspection") } else { http.Error(w,"request inspection rejected",status) }
+			return
+		}
+		response,err:=exchange(r,target,transport,claims,bodyBytes,mcpInfo,cfg.RedactSecrets)
+		if err!=nil {
+			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"upstream response rejected or unavailable"})
+			if isMCP { writeMCPError(w,http.StatusBadGateway,-32603,"upstream response rejected") } else { http.Error(w,"upstream response rejected",http.StatusBadGateway) }
+			return
+		}
+		// Requests already dispatched cannot be undone. Do not release
+		// their response after credential lifecycle validation fails.
+		if audience!="" {
+			current,e:=trust.Verify(rawToken,audience)
+			if e==nil { e=store.Check(current.ID) }
+			if e==nil { _,e=reg.BoundHolder(current,audience) }
+			if e==nil { e=delegation.Check(current,audience,trust,reg,store) }
+			if e!=nil {
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"credential lifecycle check failed before response"})
+				if isMCP { writeMCPError(w,403,-32603,"response access denied") } else { http.Error(w,"response access denied",403) }
 				return
 			}
-			redacted = didRedact
-			bodyBytes = []byte(cleaned)
 		}
-		r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-		r.ContentLength = int64(len(bodyBytes))
+		emitAudit(AuditEvent{AgentID:claims.AgentID,Owner:claims.Owner,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"ALLOW",Scopes:claims.Scopes})
+		for key,values:=range response.headers { for _,value:=range values { w.Header().Add(key,value) } }
+		w.WriteHeader(response.status)
+		if r.Method!="HEAD" && response.status!=204 && response.status!=205 { _,_=w.Write(response.body) }
 
-		r.Header.Set("X-Pangolin-Verified-Agent", claims.AgentID)
-		r.Header.Set("X-Pangolin-Agent-Owner", claims.Owner)
-		r.Header.Set("X-Kgaga-Verified-Agent", claims.AgentID)
-		r.Header.Set("X-Kgaga-Agent-Owner", claims.Owner)
-
-		emitAudit(AuditEvent{
-			AgentID: claims.AgentID, Owner: claims.Owner, Method: r.Method,
-			Path: r.URL.Path, Decision: "ALLOW", PassportID: claims.ID, Redacted: redacted, Scopes: claims.Scopes,
-		})
-
-		rp.ServeHTTP(w, r)
 	}
 
 	// Do not use ServeMux here: its path-cleaning redirects can precede

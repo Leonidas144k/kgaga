@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.4.0 gateway development
 
+- Bounded buffered HTTP request/response inspection, restricted forwarding headers and content types, matched MCP response IDs, and bidirectional block-on-secret policy. Existing transparent proxy behavior is intentionally restricted.
+
 - Replace unsigned stdio wrapper with signed frames, live identity/scope checks, lockstep response validation and a frame-signing CLI. Native clients need an adapter; OS isolation remains required.
 
 - HTTP policy version 2 requires explicit allowed methods; most-specific segment prefix wins, no broader fallback.

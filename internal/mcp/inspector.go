@@ -203,7 +203,13 @@ func inspectMessage(body []byte,methodHeader,nameHeader string,hasNameHeader boo
 // outstanding request. Server-initiated requests and notifications are not
 // supported by the lockstep development transport.
 func ValidateStdioResponse(body []byte,id any) error {
-	if !validID(id) || bytes.ContainsAny(body,"\r\n") { return invalid }
+	if bytes.ContainsAny(body,"\r\n") { return invalid }
+	return ValidateResponse(body,id)
+}
+
+// ValidateResponse checks the strict JSON-RPC result/error and exact ID.
+func ValidateResponse(body []byte,id any) error {
+	if !validID(id) { return invalid }
 	obj,err:=decode(body)
 	if err!=nil { return err }
 	for k:=range obj { switch k { case "jsonrpc","id","result","error": default: return invalid } }

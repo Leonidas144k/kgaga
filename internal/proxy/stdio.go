@@ -97,7 +97,7 @@ func RunStdioProxy(cmdPath string,cmdArgs []string,cfg *policy.Config,audience s
 			return errors.New("stdio policy denied")
 		}
 		if cfg.RedactSecrets {
-			if _,changed:=policy.Redact(string(body)); changed { return errors.New("stdio request contains recognized secret pattern") }
+			if err:=policy.InspectPayload(body,true,true); err!=nil { return errors.New("stdio request inspection rejected") }
 		}
 		if cmd==nil {
 			// No execution before authentication and authorization.
@@ -125,7 +125,7 @@ func RunStdioProxy(cmdPath string,cmdArgs []string,cfg *policy.Config,audience s
 			response:=bytes.Clone(responses.Bytes())
 			if err:=mcp.ValidateStdioResponse(response,info.ID); err!=nil { timer.Stop(); return errors.New("stdio child response rejected") }
 			if cfg.RedactSecrets {
-				if _,changed:=policy.Redact(string(response)); changed { timer.Stop(); return errors.New("stdio response contains recognized secret pattern") }
+				if err:=policy.InspectPayload(response,true,true); err!=nil { timer.Stop(); return errors.New("stdio response inspection rejected") }
 			}
 			if !timer.Stop() || ctx.Err()!=nil { return errors.New("stdio child I/O deadline exceeded") }
 			// Recheck credential lifecycle before releasing a response.

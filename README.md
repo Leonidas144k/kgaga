@@ -11,7 +11,7 @@ As companies deploy autonomous AI agents and Model Context Protocol (MCP) server
 Kgaga acts as a lightning-fast, single-binary Go gateway and CLI wrapper that addresses parts of this by introducing:
 1. **Cryptographic Agent Passports** (Ed25519-signed short-lived tokens bounding agent identity, owner, and scoped permissions).
 2. **MCP Desync & Protocol Confusion Protection** (Initial header-to-body JSON-RPC validation; full protocol hardening is pending).
-3. **Real-Time Secret Scrubbing** (Automatic regex redaction of AWS keys, GitHub PATs, OpenAI tokens, and bearer credentials).
+3. **Bidirectional Secret-Pattern Inspection** (Block recognized AWS, GitHub, OpenAI-style and bearer credential patterns; not comprehensive DLP).
 4. **Authenticated Stdio Wrapping** (`kgaga wrap`) for a restricted signed-frame development transport; a client adapter is required.
 
 ## Features
@@ -131,6 +131,12 @@ The policy checker and gateway require one YAML document of at most 128 KiB, wit
 Only POST /mcp without query parameters and application/json (optional UTF-8 charset) is inspected. A single JSON-RPC 2.0 request is required. Supported methods: initialize, ping, tools/list, tools/call and notifications/initialized. All other methods and batches are rejected. Requests require a nonempty string ID or safe-range integer ID; notifications/initialized must omit it. Params, when present, must be an object. Tool calls require a literal ASCII tool name and object arguments/_meta when present. Passport scope checks and the tool allowlist still apply.
 
 The parser rejects duplicate keys (including case-folded aliases as detected by Go strings.ToLower), unexpected envelope fields, invalid UTF-8, replacement characters, trailing JSON, depth over 32 and excessive token count. Body size remains 1 MiB. Optional compatibility method/name headers must match the body; redundant Mcp-Name is removed before forwarding. Duplicate headers, encoded bodies, trailers and unsupported connection options are rejected. With redact_secrets enabled, MCP requests matching existing secret patterns are blocked rather than rewritten after authorization. This is intentionally restrictive, not full MCP conformance or comprehensive DLP; method-specific schemas, negotiation/state, streaming, server responses and stdio security remain incomplete.
+
+### Bounded request and response inspection
+
+The HTTP gateway is no longer a transparent reverse proxy. It forwards only selected content/MCP headers and trusted identity headers, with a fixed Accept value. Client authorization, cookies and arbitrary headers are not forwarded. Upstream response headers are restricted to content type and selected MCP metadata; redirects, partial responses, encodings, trailers and streaming are unsupported. Nonempty payloads must be UTF-8 application/json or text/plain. Bodies are capped at 1 MiB in each direction; upstream response headers are capped at 32 KiB, response header wait at 10 seconds and total exchange at 30 seconds. HTTP MCP responses require a JSON-RPC 2.0 result/error with matching ID and HTTP 200, or an empty 202/204 for the supported notification. The HTTP exchange is buffered and inspected before any upstream bytes are sent to the client. Current credential lifecycle is checked again before response release; already dispatched side effects cannot be undone.
+
+The existing `redact_secrets: true` setting now blocks recognized secret patterns in request and response payloads, JSON-decoded keys/strings, request query and selected metadata rather than rewriting signed data. The authenticated stdio transport uses the same payload scanner. Patterns are heuristic and do not recognize all credentials, arbitrary encodings, split strings, attachments or indirect leakage. Setting the flag false disables secret-pattern checks, not text/JSON validation or size bounds. This development-only restriction may break existing REST and MCP clients. Upstream TLS/mTLS policy, admission concurrency, complete protocol schemas and response streaming remain outstanding.
 
 ### Start an audience-bound gateway (isolated test environment only)
 
