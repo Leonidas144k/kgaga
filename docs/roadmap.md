@@ -148,3 +148,7 @@ Increment 9 corrected at 02c6948; repeated local audit/policy/vault/brokerage te
 ### Vault development-preview review status
 
 Increment 010 CI at d2ad5d2 succeeded (44775885437), including repeated audit/brokerage tests, race suite, parser fuzzing, build and CLI lifecycle. The branch is 11 commits ahead of main with no divergence at that snapshot. Documentation and PR review are still required. No live credentials, production release or distribution tag approved. Run current govulncheck before merge review; Go 1.23.4 is the declared module toolchain, and the earlier scan predates Vault.
+
+## Sentinel & Ledger v0.6.0 development
+
+Vault v0.5.0 internal development preview merged into main at 70e2fad; post-merge CI 45010568020 passed. Increment 001 starts a separate authenticated canonical event-chain primitive with independently supplied HMAC key and stream ID, bounded verification, serialization and failure-latching tests. Validation pending. No persistence, external checkpoint, runtime integration, real detection or production guarantees; see [architecture](SENTINEL_LEDGER_ARCHITECTURE.md).

@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — v0.6.0 Sentinel & Ledger development
+
+- Add isolated canonical HMAC-linked JSONL event chain and bounded verifier; no runtime integration or durable audit support yet.
+
+
 ## Unreleased — v0.5.0 vault development
 
 - Document completed Vault implementation and CLI preview semantics, successful Increment 010 CI evidence and explicit remaining release gates. No production release authorization.
