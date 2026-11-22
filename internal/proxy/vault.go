@@ -35,6 +35,16 @@ func OpenVaultGateway(policyPath,dir,id,keyPath,keyID string)(*VaultGateway,erro
 	return &VaultGateway{policy:p,store:m,id:id,audit:audit.Default()},nil
 }
 
+// WithAuditRecorder explicitly binds a prevalidated, checked audit sink.
+// It returns a new broker rather than mutating an already-serving gateway.
+// The recorder must already be backed by a trustworthy fail-closed writer.
+func (v *VaultGateway) WithAuditRecorder(rec *audit.Recorder)(*VaultGateway,error) {
+ if v==nil || v.policy==nil || v.store==nil || rec==nil { return nil,errors.New("vault audit recorder required") }
+ clone:=*v
+ clone.audit=rec
+ return &clone,nil
+}
+
 func (v *VaultGateway) bind(origin,audience string) error {
 	if v==nil || v.store==nil || v.policy==nil || v.audit==nil { return errors.New("vault configuration required") }
 	return v.policy.ValidateBinding(origin,audience,v.id)

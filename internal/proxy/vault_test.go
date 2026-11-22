@@ -18,6 +18,7 @@ import (
 
 	"github.com/Leonidas144k/kgaga/internal/audit"
 	"github.com/Leonidas144k/kgaga/internal/keyring"
+	"github.com/Leonidas144k/kgaga/internal/ledger"
 	"github.com/Leonidas144k/kgaga/internal/passport"
 	"github.com/Leonidas144k/kgaga/internal/policy"
 	"github.com/Leonidas144k/kgaga/internal/registry"
@@ -152,6 +153,29 @@ func TestVaultCredentialInjection(t *testing.T) {
 	run(h,"agent","/api","GET","",scopes,false,403,false)
 	if err:=m.Activate("token",1); err!=nil { t.Fatal(err) }
 	run(h,"agent","/api","GET","",scopes,false,204,true)
+	// Explicit programmatic opt-in: the full Vault handler uses a
+	// checkpointed Ledger without changing the ordinary default sink.
+	private:=filepath.Join(dir,"ledger-private")
+	if err:=os.Mkdir(private,0700);err!=nil{t.Fatal(err)}
+	chainKey,err:=ledger.GenerateKey();if err!=nil{t.Fatal(err)}
+	witnessKey,err:=ledger.GenerateKey();if err!=nil{t.Fatal(err)}
+	streamID,err:=ledger.GenerateStreamID();if err!=nil{t.Fatal(err)}
+	journalDir:=filepath.Join(private,"journal")
+	checkpointDir:=filepath.Join(private,"checkpoint")
+	anchored,err:=ledger.InitAnchoredJournal(journalDir,checkpointDir,chainKey,witnessKey,streamID)
+	if err!=nil{t.Fatal(err)}
+	bridge,err:=ledger.NewAuditBridge(anchored);if err!=nil{t.Fatal(err)}
+	ledgerBroker,err:=broker.WithAuditRecorder(audit.NewRecorder(bridge));if err!=nil{t.Fatal(err)}
+	ledgerHandler,err:=NewHandlerWithVault(up.URL,trust,cfg,"api",rev,reg,replay,ledgerBroker,opt);if err!=nil{t.Fatal(err)}
+	run(ledgerHandler,"agent","/api","GET","",scopes,false,204,true)
+	auditHead,err:=anchored.Head();if err!=nil||auditHead.Sequence==0{t.Fatal("no ledger evidence persisted",err)}
+	// Simulated external journal mutation must stop credential dispatch.
+	journalFile,err:=os.OpenFile(filepath.Join(journalDir,"ledger.jsonl"),os.O_APPEND|os.O_WRONLY,0600)
+	if err!=nil{t.Fatal(err)}
+	if _,err:=journalFile.Write([]byte("external\n"));err!=nil{t.Fatal(err)}
+	_=journalFile.Close()
+	run(ledgerHandler,"agent","/api","GET","",scopes,false,503,false)
+	if err:=anchored.Close();err==nil{t.Fatal("tampered ledger released locks")}
 	run(h,"other","/api","GET","",scopes,false,403,false)
 	run(h,"agent","/api","GET","",[]string{"read"},false,403,false)
 	run(h,"agent","/api?x=1","GET","",scopes,false,403,false)

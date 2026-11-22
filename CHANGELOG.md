@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.6.0 Sentinel & Ledger development
 
+- Add explicit Vault audit-to-Ledger writer adapter and broker injection API with fail-closed verified persistence. Programmatic opt-in only; CLI remains unchanged.
+
 - Add separate authenticated checkpoint snapshots and combined journal/checkpoint append and restart verification with independent expected heads; no external trust anchor or automated crash recovery.
 
 - Add single-host synced Ledger journal, checked restart continuity, private-file and lock checks, with failure/recovery tests. No independent checkpoint storage or runtime audit integration.

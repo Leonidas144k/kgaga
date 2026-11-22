@@ -1,6 +1,6 @@
 # Kgaga Sentinel & Ledger v0.6.0 — development architecture
 
-Status: increment 003, **development-preview journal and locally authenticated checkpoint**. No runtime audit integration or Sentinel detector is implemented.
+Status: increment 004, **isolated Vault audit-to-Ledger adapter**. No default CLI Ledger configuration or Sentinel detector is implemented.
 
 ## Ledger scope (increment 001)
 
@@ -23,6 +23,14 @@ Limitations: a cooperative local POSIX lock does not stop privileged tampering o
 `InitAnchoredJournal` creates an independent private checkpoint directory and uses **separate HMAC keys** for journal and checkpoint authentication. The checkpoint record contains the stream ID, sequence, journal MAC and a separately keyed witness MAC, stored in canonical bounded JSON. Each append synchronizes the journal before atomically publishing and synchronizing a new checkpoint snapshot. `OpenAnchoredJournal` requires the **independently retained expected Head** and verifies both layers before resuming.
 
 Invalid checkpoint material, old snapshots, unsafe filesystem metadata, changed journal content, and unequal layers fail closed. An interruption after journal fsync but before checkpoint publication leaves an ambiguous state requiring explicit offline recovery; no automatic truncation, rollback, cleanup or permission downgrade. This is not an atomic cross-directory transaction. The checkpoint snapshot is authenticated but can itself be rolled back by a privileged attacker; rollback detection depends on independently retaining the latest expected Head in a genuinely separate trust domain. **Kgaga does not yet offer that external anchoring service**, authenticated backup, crash recovery procedures or production key custody. Separately named local directories do not guarantee isolated storage or administration. No runtime Vault audit integration.
+
+## Increment 004 — checked Vault audit integration (programmatic opt-in)
+
+The new `ledger.AuditBridge` implements `io.Writer` for the existing `audit.NewRecorder`. It accepts one bounded, canonical `kgaga.vault.audit.v1` JSON line per write, rejects unknown keys, duplicated keys, alternate encodings and non-event input, then calls `AnchoredJournal.Append`. A write succeeds **only after the local journal and separate checkpoint both complete**. A failure latches the bridge and the recorder; no fallback to stderr, no automatic replay and no bypass of Vault's existing dispatch/release auditing. Concurrency is serialized.
+
+`VaultGateway.WithAuditRecorder(rec)` returns a *new* broker bound to an explicitly supplied recorder, without modifying an already-serving handler. The existing Vault request/response handling still calls `audit.Recorder.Record` for intent and response release. The integration test constructs a real TLS Vault handler with this alternate recorder and verifies that deliberate journal tampering produces HTTP 503 before a credential can be dispatched.
+
+**Scope restriction:** this is an opt-in *programmatic integration* and test foundation, not a new CLI flag or a default runtime change. The current `kgaga proxy` CLI continues to use the existing structured stderr sink. Separate operator configuration, key custody, trusted checkpoint input, lifecycle, runtime cleanup, recovery and deployment guidance remain unimplemented. Because `AnchoredJournal` holds per-process locks and retains incomplete commits for offline inspection, a restart must not invent or reset checkpoint state. No external trusted checkpoint service. Use synthetic events only.
 
 ## Planned next increments
 

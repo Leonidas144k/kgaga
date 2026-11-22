@@ -160,3 +160,7 @@ Increment 001 local repeated race regression and GitHub CI 45011269258 passed. I
 ### Sentinel & Ledger increment 003
 
 Increment 002 passed ten repeated race tests, complete local regressions, and CI at 0d2bd91 (45012179648). Increment 003 adds a separate local HMAC-authenticated checkpoint with a distinct key, durable atomic snapshot publication, combined append and verified restart, explicit independent expected-head requirement, and fail-closed interrupted-commit behavior. No external anchoring, key management, safe crash recovery, distributed writes or runtime audit integration; validation pending.
+
+### Sentinel & Ledger increment 004
+
+Increment 003 passed ten repeated local race tests and full regression, plus CI 45019143269. Increment 004 adds an explicitly constructed Vault audit-to-Ledger writer adapter, checked canonical event parsing, journal-plus-checkpoint acknowledgement, fail-closed writer latching and a real Vault HTTPS handler integration regression. No CLI opt-in, external checkpoint trust or operator-managed key custody yet; validation pending.
