@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — v0.6.0 Sentinel & Ledger development
+
+- Harden incident notification recovery by rejecting delivery idempotency keys reused across incidents; add adversarial rollback, duplicated-outcome and tamper regressions and internal preview release gates.
+
+- Restore advisory delivery states from verified ordered Ledger history; block fresh dispatcher resets and uncertain in-flight resends, preserving stable IDs, attempt bounds and cooldowns.
+
+- Add explicit manual advisory delivery interface with audited intent/outcomes, retry limits, idempotency metadata, and sanitized operator notices. Transport plugin and restart replay pending.
+
+- Restore advisory incident state from bounded fully verified checkpointed Ledger history, rejecting orphaned, conflicting or malformed transitions; no automatic crash recovery.
+
+- Add advisory Sentinel incident records with bounded open/acknowledged/resolved workflow, explicit operator review and checkpointed Ledger evidence; programmatic opt-in only.
+
+- Add bounded in-memory advisory Sentinel detector for credential denials, exchange failures and withheld responses, with unique-attempt correlation and conservative alert suppression; no enforcement or gateway runtime wiring.
+
+- Add explicit Vault audit-to-Ledger writer adapter and broker injection API with fail-closed verified persistence. Programmatic opt-in only; CLI remains unchanged.
+
+- Add separate authenticated checkpoint snapshots and combined journal/checkpoint append and restart verification with independent expected heads; no external trust anchor or automated crash recovery.
+
+- Add single-host synced Ledger journal, checked restart continuity, private-file and lock checks, with failure/recovery tests. No independent checkpoint storage or runtime audit integration.
+
+- Add isolated canonical HMAC-linked JSONL event chain and bounded verifier; no runtime integration or durable audit support yet.
+
+
 ## Unreleased — v0.5.0 vault development
 
 - Document completed Vault implementation and CLI preview semantics, successful Increment 010 CI evidence and explicit remaining release gates. No production release authorization.

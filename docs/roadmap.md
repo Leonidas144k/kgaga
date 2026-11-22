@@ -148,3 +148,43 @@ Increment 9 corrected at 02c6948; repeated local audit/policy/vault/brokerage te
 ### Vault development-preview review status
 
 Increment 010 CI at d2ad5d2 succeeded (44775885437), including repeated audit/brokerage tests, race suite, parser fuzzing, build and CLI lifecycle. The branch is 11 commits ahead of main with no divergence at that snapshot. Documentation and PR review are still required. No live credentials, production release or distribution tag approved. Run current govulncheck before merge review; Go 1.23.4 is the declared module toolchain, and the earlier scan predates Vault.
+
+## Sentinel & Ledger v0.6.0 development
+
+Vault v0.5.0 internal development preview merged into main at 70e2fad; post-merge CI 45010568020 passed. Increment 001 starts a separate authenticated canonical event-chain primitive with independently supplied HMAC key and stream ID, bounded verification, serialization and failure-latching tests. Validation pending. No persistence, external checkpoint, runtime integration, real detection or production guarantees; see [architecture](SENTINEL_LEDGER_ARCHITECTURE.md).
+
+### Sentinel & Ledger increment 002
+
+Increment 001 local repeated race regression and GitHub CI 45011269258 passed. Increment 002 introduces a private synced single-host journal with exclusive lock, expected-head reopening, filesystem identity/size validation, and explicit fail-closed crash semantics. Local and CI validation pending; no external checkpoint or runtime integration.
+
+### Sentinel & Ledger increment 003
+
+Increment 002 passed ten repeated race tests, complete local regressions, and CI at 0d2bd91 (45012179648). Increment 003 adds a separate local HMAC-authenticated checkpoint with a distinct key, durable atomic snapshot publication, combined append and verified restart, explicit independent expected-head requirement, and fail-closed interrupted-commit behavior. No external anchoring, key management, safe crash recovery, distributed writes or runtime audit integration; validation pending.
+
+### Sentinel & Ledger increment 004
+
+Increment 003 passed ten repeated local race tests and full regression, plus CI 45019143269. Increment 004 adds an explicitly constructed Vault audit-to-Ledger writer adapter, checked canonical event parsing, journal-plus-checkpoint acknowledgement, fail-closed writer latching and a real Vault HTTPS handler integration regression. No CLI opt-in, external checkpoint trust or operator-managed key custody yet; validation pending.
+
+### Sentinel & Ledger increment 005
+
+Increment 004 passed local repeated Ledger, Vault integration and full race tests, plus GitHub CI 45023064147. Increment 005 adds a standalone bounded advisory detector for unique-attempt denial, exchange-failure and withheld-response bursts, with per-identity sliding windows, explicit capacity errors, deterministic time/clock tests and concurrency tests. Replay, rate-limit and full behavioural monitoring remain unimplemented. CI/local validation pending.
+
+### Sentinel & Ledger increment 006
+
+Increment 005 passed repeated local Sentinel race tests, Ledger suite, full regression, lifecycle and GitHub CI 45026876140. Increment 006 adds bounded operator-review incident cases with write-before-state-transition recording into the checkpointed Ledger, strict revision/state validation, explicit fail-closed incident storage errors, and synthetic end-to-end tests. No external delivery, authenticated operator RBAC, restart reconstruction or automatic mitigation; validation pending.
+
+### Sentinel & Ledger increment 007
+
+Increment 006 passed local ten-repeat Sentinel races, five-repeat Ledger race tests, the full suite and CI 45027981372. Increment 007 implements bounded verified journal history and strict replay of incident transitions into the in-memory incident manager, with no automated recovery, external trust or runtime gateway wiring. Validation pending.
+
+### Sentinel & Ledger increment 008
+
+Increment 007 passed ten-repeat local Sentinel race tests, five-repeat Ledger race tests, full regression and CI 45030737153. Increment 008 introduces manual advisory delivery with a stable idempotency ID, bounded retries/timeouts, checked pre-send intent and outcome records in Ledger, sanitized notices and fail-closed storage errors. Transport is operator-supplied; no real provider adapter, restart delivery recovery or runtime Gateway configuration. Validation pending.
+
+### Sentinel & Ledger increment 009
+
+Increment 008 passed local repeated Sentinel/ Ledger race tests, full integration and CLI lifecycle, with GitHub CI 45033403402. Increment 009 adds full bounded, checkpoint-verified ordered incident/delivery history replay, reconstruction of accepted/failed/queued/uncertain delivery states, strict transition validation, and a safeguard rejecting fresh dispatchers that could forget previous accepted/uncertain sends. No operator/provider reconciliation API, external anchor, real delivery transport or runtime CLI activation; CI/local validation pending.
+
+### Sentinel & Ledger increment 010
+
+Increment 009 passed user-local ten-repeat Sentinel race tests, five-repeat Ledger race tests, full suite and lifecycle, plus CI 45037458526. Increment 010 focuses on adversarial replay ID uniqueness, duplicate terminal outcomes, authenticated journal tampering, residual-risk disclosure and internal preview gates. No independent assurance, distribution license change, main merge, production use or automatic enforcement. Validation pending.

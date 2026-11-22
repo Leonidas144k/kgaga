@@ -50,3 +50,17 @@ Outstanding: independent protocol/cryptography review, sustained load tests, ope
 - [ ] Before any distribution: resolve license and private security reporting, supported build toolchains, artifacts and recovery/migration documentation.
 
 Unresolved production gates: persistent KEK wrap budget and aggregate storage quotas, protected KEK custody/rotation, rollback resistance and crash recovery, trusted time, dynamic provider issuance/revocation, real provider interoperability, independent security review, sustained load tests, durable tamper-evident audit, and distributed consistency. No live credentials, production approval or release tag.
+
+## Sentinel & Ledger v0.6.0 internal development-preview review
+
+- [x] Increment 009 developer-local repeated Sentinel/ Ledger race tests, full suite, binary build and CLI lifecycle passed at f1228a1, with clean feature branch.
+- [x] GitHub CI 45037458526 succeeded at Increment 009.
+- [ ] Increment 010 current commit: validate repeated Ledger, Sentinel, proxy regression, full race suite, module integrity, vet and CLI lifecycle on a developer machine and in GitHub CI.
+- [ ] Independently inspect code review and explicitly approve **internal synthetic-data preview only**; a green CI run is not an independent security audit.
+- [ ] Require an independently trusted, retained checkpoint Head and protected HMAC keys before restarting any real journal.
+- [ ] Review crash-lock and incomplete journal/checkpoint recovery through a controlled offline process; **never** automatically delete locks or truncate a journal.
+- [ ] Establish real provider-side idempotency, operator authentication, validated delivery destinations and transport receipts before live notifications.
+- [ ] Resolve licensing, coordinated vulnerability reporting, release artifacts/checksums and platform support before any public tag or distribution.
+- [ ] Keep auto-suspension, auto-revocation, live credentials, external alert delivery and production deployment disabled.
+
+**Not met for production:** external rollback-resistant checkpoint anchoring, key custody, audited backups/recovery, multi-node consistency, independent security assessment, sustained load testing, integration with runtime CLI and operational alerting. No production readiness claim.

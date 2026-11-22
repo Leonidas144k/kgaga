@@ -42,6 +42,24 @@ type Event struct {
 	Provider string `json:"provider,omitempty"`
 	ProviderVersion uint64 `json:"provider_version,omitempty"`
 	Status int `json:"http_status,omitempty"`
+	// Sentinel incident transitions use explicit optional metadata. They
+	// never contain an auth token, passport, request or response payload.
+	IncidentID string `json:"incident_id,omitempty"`
+	IncidentSignal string `json:"incident_signal,omitempty"`
+	IncidentState string `json:"incident_state,omitempty"`
+	IncidentRevision uint64 `json:"incident_revision,omitempty"`
+	IncidentResolution string `json:"incident_resolution,omitempty"`
+	IncidentCount int `json:"incident_count,omitempty"`
+	IncidentWindowSeconds int64 `json:"incident_window_seconds,omitempty"`
+	IncidentObservedAt string `json:"incident_observed_at,omitempty"`
+	OperatorID string `json:"operator_id,omitempty"`
+	// Delivery metadata contains no raw transport errors, credentials,
+	// messages, provider URLs or response bodies.
+	DeliveryID string `json:"delivery_id,omitempty"`
+	DeliveryPhase string `json:"delivery_phase,omitempty"`
+	DeliveryAttempt int `json:"delivery_attempt,omitempty"`
+	DeliveryChannel string `json:"delivery_channel,omitempty"`
+
 }
 
 func NewID()(string,error) {
