@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/Leonidas144k/kgaga/internal/audit"
+	"github.com/Leonidas144k/kgaga/internal/ledger"
 )
 
 const DeliverySchema = "kgaga.sentinel.delivery.v1"
@@ -16,6 +17,7 @@ const (
 	DeliveryQueued = "queued"
 	DeliveryFailed = "failed"
 	DeliveryAccepted = "accepted"
+	DeliveryUncertain = "uncertain"
 )
 
 var (
@@ -25,6 +27,7 @@ var (
 	ErrDeliveryLimit = errors.New("sentinel delivery retry limit reached")
 	ErrDeliveryRetry = errors.New("sentinel delivery retry not yet permitted")
 	ErrDeliveryIncident = errors.New("sentinel incident is not eligible for delivery")
+	ErrDeliveryUncertain = errors.New("sentinel delivery result unknown; operator reconciliation required")
 )
 
 type DeliveryConfig struct {
@@ -84,13 +87,27 @@ type Dispatcher struct{
 	failed bool
 }
 
+func validDeliveryConfig(cfg DeliveryConfig)bool {
+	return cfg.MaxAttempts>=1 && cfg.MaxAttempts<=5 &&
+		cfg.RetryInterval>=time.Second && cfg.RetryInterval<=time.Hour &&
+		cfg.SendTimeout>=time.Second && cfg.SendTimeout<=10*time.Second &&
+		cfg.MaxPending>=1 && cfg.MaxPending<=4096
+}
+
+// NewDispatcher initializes a fresh empty manual dispatcher. A checkpointed
+// Ledger with historical delivery records MUST use RestoreDispatcher instead;
+// otherwise a restart could forget an accepted or uncertain notification.
 func NewDispatcher(incidents *IncidentManager,sink IncidentLedger,transport Transport,cfg DeliveryConfig,clock func()time.Time)(*Dispatcher,error){
-	if incidents==nil || sink==nil || transport==nil ||
-		cfg.MaxAttempts<1 || cfg.MaxAttempts>5 ||
-		cfg.RetryInterval<time.Second || cfg.RetryInterval>time.Hour ||
-		cfg.SendTimeout<time.Second || cfg.SendTimeout>10*time.Second ||
-		cfg.MaxPending<1 || cfg.MaxPending>4096{return nil,ErrDeliveryConfig}
+	if incidents==nil || sink==nil || transport==nil || !validDeliveryConfig(cfg){return nil,ErrDeliveryConfig}
 	if _,err:=sink.Head();err!=nil{return nil,ErrDeliveryStorage}
+	if j,ok:=sink.(*ledger.AnchoredJournal);ok {
+		if incidents.sink!=j{return nil,ErrDeliveryConfig}
+		events,_,err:=j.SentinelHistory(16384)
+		if err!=nil{return nil,ErrDeliveryStorage}
+		for _,e:=range events {
+			if e.Action=="sentinel_delivery"{return nil,ErrDeliveryStorage}
+		}
+	}
 	if clock==nil{clock=time.Now}
 	return &Dispatcher{incidents:incidents,sink:sink,transport:transport,cfg:cfg,clock:clock,deliveries:make(map[string]*Delivery)},nil
 }
@@ -139,6 +156,7 @@ func(d *Dispatcher)Notify(ctx context.Context,incidentID string)(Delivery,error)
 		d.deliveries[incidentID]=item
 	}
 	if item.Status==DeliveryAccepted{return *item,nil}
+	if item.Status==DeliveryUncertain{return *item,ErrDeliveryUncertain}
 	if item.Attempts>=d.cfg.MaxAttempts{return *item,ErrDeliveryLimit}
 	if item.NextRetryAt!="" {
 		until,e:=time.Parse(time.RFC3339Nano,item.NextRetryAt)
