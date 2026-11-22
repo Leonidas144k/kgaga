@@ -57,6 +57,7 @@ func safeIncidentMetadata(e audit.Event) bool {
 		e.Method == "" && e.Target == "" && e.PassportID == "" &&
 		e.MCPMethod == "" && e.Tool == "" && e.Provider == "" &&
 		e.ProviderVersion == 0 && e.Status == 0 &&
+		e.DeliveryID == "" && e.DeliveryPhase == "" && e.DeliveryAttempt == 0 && e.DeliveryChannel == "" &&
 		e.IncidentCount >= 1 && e.IncidentCount <= 512 &&
 		e.IncidentWindowSeconds >= 1 && e.IncidentWindowSeconds <= 86400
 }

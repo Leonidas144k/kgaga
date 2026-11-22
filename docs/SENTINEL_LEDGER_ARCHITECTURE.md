@@ -1,6 +1,6 @@
 # Kgaga Sentinel & Ledger v0.6.0 — development architecture
 
-Status: increment 007, **verified incident-state reconstruction**. No default CLI Ledger or Sentinel runtime integration is implemented.
+Status: increment 008, **operator-controlled advisory delivery interface**. No default CLI Ledger or Sentinel runtime integration is implemented.
 
 ## Ledger scope (increment 001)
 
@@ -55,6 +55,14 @@ Every successful state transition is first appended as a `kgaga.vault.audit.v1` 
 `sentinel.RestoreIncidentManager` reconstructs open, acknowledged and resolved incidents by validating every recorded transition in chronological order, including unique attempt IDs, incident IDs, revision progression, operator IDs, alert metadata and allowed state changes. It reconstructs the active index to avoid duplicate unresolved cases. It rejects conflicting or orphaned transitions, excess case count, altered metadata, unsupported event fields and backward timestamps. It does not emit events or repair state during replay. A full journal above 16 MiB cannot yet be used for restart restoration, even though the underlying journal allows 64 MiB.
 
 **Limitations:** restart recovery is explicit and programmatic only. No automated crash lock cleanup, trusted external checkpoint service, rollback defense, key custody, operator authentication, cross-process exclusivity, alert delivery or replay of detector sliding windows exists. Only one incident manager may use the journal for incident writes. This does not reconstruct arbitrary application state or prove that an alert was delivered. This implementation remains synthetic-data development preview.
+
+## Increment 008 — bounded advisory delivery
+
+`sentinel.Dispatcher` accepts a trusted `IncidentManager`, checkpointed `IncidentLedger` and an explicitly supplied `Transport`. It exposes a **manual synchronous** `Notify(context, incidentID)` method only; no background worker, public API, configured destination or email/SMS/webhook adapter exists. It checks that the incident is not resolved, journals a stable per-incident delivery ID, journals attempt intent before calling the adapter, and journals a sanitized accepted/failed outcome before acknowledging it. Storage errors permanently latch the dispatcher unavailable: never automatically retry ambiguous sends. The adapter must implement deadlines and use the stable delivery ID for provider-side idempotency; Kgaga itself cannot ensure remote exactly-once delivery.
+
+Default policy permits at most three manually triggered sends, a minimum one-second retry interval, a five-second delivery deadline and at most 256 pending identities. The dispatcher is serialized and rejects invalid configuration and unsafe incident states. The transport notice carries only incident ID/revision, signal/severity, vault/agent/audience, count and advisory marker—no credential names, tokens, proofs, origins, URLs, request bodies or raw transport errors. A successful adapter return means **transport acceptance**, not delivery to, or acknowledgement by, a human.
+
+**Limitations:** delivery queue and attempts are not reconstructed after restart, and no independent operator authentication, delivery receipt, destination validation, TLS-pin policy, durable outbox recovery, external alert provider integration or multi-process coordination exists. The existing Gateway and CLI remain unchanged. Delivery must remain explicitly opt-in and synthetic-data only.
 
 ## Planned next increments
 

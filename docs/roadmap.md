@@ -176,3 +176,7 @@ Increment 005 passed repeated local Sentinel race tests, Ledger suite, full regr
 ### Sentinel & Ledger increment 007
 
 Increment 006 passed local ten-repeat Sentinel races, five-repeat Ledger race tests, the full suite and CI 45027981372. Increment 007 implements bounded verified journal history and strict replay of incident transitions into the in-memory incident manager, with no automated recovery, external trust or runtime gateway wiring. Validation pending.
+
+### Sentinel & Ledger increment 008
+
+Increment 007 passed ten-repeat local Sentinel race tests, five-repeat Ledger race tests, full regression and CI 45030737153. Increment 008 introduces manual advisory delivery with a stable idempotency ID, bounded retries/timeouts, checked pre-send intent and outcome records in Ledger, sanitized notices and fail-closed storage errors. Transport is operator-supplied; no real provider adapter, restart delivery recovery or runtime Gateway configuration. Validation pending.

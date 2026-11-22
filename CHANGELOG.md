@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.6.0 Sentinel & Ledger development
 
+- Add explicit manual advisory delivery interface with audited intent/outcomes, retry limits, idempotency metadata, and sanitized operator notices. Transport plugin and restart replay pending.
+
 - Restore advisory incident state from bounded fully verified checkpointed Ledger history, rejecting orphaned, conflicting or malformed transitions; no automatic crash recovery.
 
 - Add advisory Sentinel incident records with bounded open/acknowledged/resolved workflow, explicit operator review and checkpointed Ledger evidence; programmatic opt-in only.
