@@ -101,12 +101,12 @@ func NewDispatcher(incidents *IncidentManager,sink IncidentLedger,transport Tran
 	if incidents==nil || sink==nil || transport==nil || !validDeliveryConfig(cfg){return nil,ErrDeliveryConfig}
 	if _,err:=sink.Head();err!=nil{return nil,ErrDeliveryStorage}
 	if j,ok:=sink.(*ledger.AnchoredJournal);ok {
-		if incidents.sink!=j{return nil,ErrDeliveryConfig}
 		events,_,err:=j.SentinelHistory(16384)
 		if err!=nil{return nil,ErrDeliveryStorage}
 		for _,e:=range events {
 			if e.Action=="sentinel_delivery"{return nil,ErrDeliveryStorage}
 		}
+		if incidents.sink!=j{return nil,ErrDeliveryConfig}
 	}
 	if clock==nil{clock=time.Now}
 	return &Dispatcher{incidents:incidents,sink:sink,transport:transport,cfg:cfg,clock:clock,deliveries:make(map[string]*Delivery)},nil
