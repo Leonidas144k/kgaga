@@ -152,3 +152,7 @@ Increment 010 CI at d2ad5d2 succeeded (44775885437), including repeated audit/br
 ## Sentinel & Ledger v0.6.0 development
 
 Vault v0.5.0 internal development preview merged into main at 70e2fad; post-merge CI 45010568020 passed. Increment 001 starts a separate authenticated canonical event-chain primitive with independently supplied HMAC key and stream ID, bounded verification, serialization and failure-latching tests. Validation pending. No persistence, external checkpoint, runtime integration, real detection or production guarantees; see [architecture](SENTINEL_LEDGER_ARCHITECTURE.md).
+
+### Sentinel & Ledger increment 002
+
+Increment 001 local repeated race regression and GitHub CI 45011269258 passed. Increment 002 introduces a private synced single-host journal with exclusive lock, expected-head reopening, filesystem identity/size validation, and explicit fail-closed crash semantics. Local and CI validation pending; no external checkpoint or runtime integration.

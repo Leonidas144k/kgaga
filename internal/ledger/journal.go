@@ -30,6 +30,7 @@ type Journal struct {
  lockInfo os.FileInfo
  path string
  fileInfo os.FileInfo
+ expectedSize int64
  file *os.File
  chain *Writer
  failed bool
@@ -81,7 +82,7 @@ func makeJournal(dir string,key Key,id StreamID,f *os.File,initial Head)(*Journa
  chain.seq=initial.Sequence
  chain.prev=raw
  return &Journal{dir:dir,dirInfo:dinfo,lock:lock,lockInfo:linfo,
-  path:path,fileInfo:finfo,file:f,chain:chain},nil
+  path:path,fileInfo:finfo,expectedSize:opened.Size(),file:f,chain:chain},nil
 }
 
 func parseJournalHead(h Head,id StreamID)([32]byte,error){
@@ -109,6 +110,7 @@ func InitJournal(dir string,key Key,id StreamID)(*Journal,error){
  f,err:=os.OpenFile(path,os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_EXCL,0600)
  if err!=nil{return nil,ErrJournal}
  if err:=f.Sync();err!=nil{_ = f.Close();return nil,ErrJournal}
+ if err:=syncJournalDir(filepath.Dir(abs));err!=nil{_ = f.Close();return nil,err}
  if err:=syncJournalDir(abs);err!=nil{_ = f.Close();return nil,err}
  var zero [32]byte
  j,err:=makeJournal(abs,key,id,f,head(id,0,zero))
@@ -176,7 +178,7 @@ func(j *Journal)check()error{
  path,err:=os.Lstat(j.path)
  opened,openErr:=j.file.Stat()
  if err!=nil || openErr!=nil || !journalFile(path) || !journalFile(opened) ||
-  !os.SameFile(path,j.fileInfo) || !os.SameFile(path,opened){return ErrJournal}
+  !os.SameFile(path,j.fileInfo) || !os.SameFile(path,opened) || opened.Size()!=j.expectedSize{return ErrJournal}
  return nil
 }
 
@@ -191,6 +193,9 @@ func(j *Journal)Append(e audit.Event)(Head,error){
   if !errors.Is(err,ErrInvalid){j.failed=true}
   return Head{},err
  }
+ info,statErr:=j.file.Stat()
+ if statErr!=nil || info.Size()<=j.expectedSize {j.failed=true;return Head{},ErrJournal}
+ j.expectedSize=info.Size()
  if err:=j.check();err!=nil{j.failed=true;return Head{},err}
  return result,nil
 }

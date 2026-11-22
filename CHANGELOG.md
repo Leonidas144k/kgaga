@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.6.0 Sentinel & Ledger development
 
+- Add single-host synced Ledger journal, checked restart continuity, private-file and lock checks, with failure/recovery tests. No independent checkpoint storage or runtime audit integration.
+
 - Add isolated canonical HMAC-linked JSONL event chain and bounded verifier; no runtime integration or durable audit support yet.
 
 
