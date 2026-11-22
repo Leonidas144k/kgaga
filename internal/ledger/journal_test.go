@@ -18,7 +18,7 @@ func journalEvent() audit.Event {
 
 func TestJournalRestartAndExpectedHead(t *testing.T){
  key,id,_:=fixture(t)
- dir:=filepath.Join(t.TempDir(),"journal")
+ dir:=filepath.Join(privateJournalRoot(t),"journal")
  j,err:=InitJournal(dir,key,id); if err!=nil{t.Fatal(err)}
  genesis,err:=j.Head();if err!=nil||genesis.Sequence!=0{t.Fatal("invalid genesis")}
  if _,err:=OpenJournal(dir,key,id,genesis);!errors.Is(err,ErrJournalLocked){t.Fatal("concurrent writer accepted")}
@@ -39,7 +39,7 @@ func TestJournalRestartAndExpectedHead(t *testing.T){
 
 func TestJournalTruncationAndCrashLock(t *testing.T){
  key,id,_:=fixture(t)
- dir:=filepath.Join(t.TempDir(),"journal")
+ dir:=filepath.Join(privateJournalRoot(t),"journal")
  j,err:=InitJournal(dir,key,id);if err!=nil{t.Fatal(err)}
  expected,err:=j.Append(journalEvent());if err!=nil{t.Fatal(err)}
  path:=filepath.Join(dir,journalFilename)
@@ -58,7 +58,7 @@ func TestJournalTruncationAndCrashLock(t *testing.T){
 
 func TestJournalUnsafeFilesystemAndExternalModification(t *testing.T){
  key,id,_:=fixture(t)
- dir:=filepath.Join(t.TempDir(),"journal")
+ dir:=filepath.Join(privateJournalRoot(t),"journal")
  j,err:=InitJournal(dir,key,id);if err!=nil{t.Fatal(err)}
  h,err:=j.Head();if err!=nil{t.Fatal(err)}
  if err:=j.Close();err!=nil{t.Fatal(err)}
@@ -78,7 +78,7 @@ func TestJournalUnsafeFilesystemAndExternalModification(t *testing.T){
 
 func TestJournalRejectReplacementAndPrefixMismatch(t *testing.T){
  key,id,_:=fixture(t)
- dir:=filepath.Join(t.TempDir(),"journal")
+ dir:=filepath.Join(privateJournalRoot(t),"journal")
  j,err:=InitJournal(dir,key,id);if err!=nil{t.Fatal(err)}
  h1,err:=j.Append(journalEvent());if err!=nil{t.Fatal(err)}
  h2,err:=j.Append(journalEvent());if err!=nil{t.Fatal(err)}
@@ -94,4 +94,15 @@ func TestJournalRejectReplacementAndPrefixMismatch(t *testing.T){
  if err:=os.Remove(path);err!=nil{t.Fatal(err)}
  if err:=os.Symlink(filepath.Join(dir,"external"),path);err!=nil{t.Fatal(err)}
  if _,err:=OpenJournal(dir,key,id,h1);!errors.Is(err,ErrJournal){t.Fatal("symlink accepted")}
+}
+
+func privateJournalRoot(t *testing.T)string{
+ t.Helper()
+ root:=t.TempDir()
+ if err:=os.Chmod(root,0700);err!=nil{t.Fatal(err)}
+ private:=filepath.Join(root,"private")
+ if err:=os.Mkdir(private,0700);err!=nil{t.Fatal(err)}
+ info,err:=os.Lstat(private)
+ if err!=nil || info.Mode().Perm()!=0700 {t.Fatalf("private fixture directory permissions: %v, %v",info,err)}
+ return private
 }
