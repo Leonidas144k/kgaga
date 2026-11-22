@@ -34,5 +34,22 @@ jobs:
       - name: Fuzz Vault record and provider formats
         run: go test ./internal/vault -run=^$ -fuzz=^FuzzVaultFormats$ -fuzztime=10s -parallel=2
       - run: go build -trimpath -o /tmp/kgaga ./cmd/kgaga
+      - name: Verify synthetic Sentinel runtime CLI
+        run: |
+          /tmp/kgaga demo-sentinel --synthetic > /tmp/kgaga-sentinel-demo.json
+          python3 - <<'PY'
+          import json
+          with open("/tmp/kgaga-sentinel-demo.json", encoding="utf-8") as f:
+              actual = json.load(f)
+          assert actual == {
+              "mode": "synthetic",
+              "advisory_signals": 1,
+              "incident_transitions": 3,
+              "verified_ledger_records": 8,
+              "recovered_state": "resolved",
+              "notifications_sent": 0,
+              "production_configured": False,
+          }, "unexpected runtime demo output"
+          PY
       - name: Verify CLI passport lifecycle
         run: bash scripts/test-passport-lifecycle.sh /tmp/kgaga
