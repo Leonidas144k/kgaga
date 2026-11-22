@@ -156,3 +156,7 @@ Vault v0.5.0 internal development preview merged into main at 70e2fad; post-merg
 ### Sentinel & Ledger increment 002
 
 Increment 001 local repeated race regression and GitHub CI 45011269258 passed. Increment 002 introduces a private synced single-host journal with exclusive lock, expected-head reopening, filesystem identity/size validation, and explicit fail-closed crash semantics. Local and CI validation pending; no external checkpoint or runtime integration.
+
+### Sentinel & Ledger increment 003
+
+Increment 002 passed ten repeated race tests, complete local regressions, and CI at 0d2bd91 (45012179648). Increment 003 adds a separate local HMAC-authenticated checkpoint with a distinct key, durable atomic snapshot publication, combined append and verified restart, explicit independent expected-head requirement, and fail-closed interrupted-commit behavior. No external anchoring, key management, safe crash recovery, distributed writes or runtime audit integration; validation pending.
