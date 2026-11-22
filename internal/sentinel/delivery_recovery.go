@@ -61,6 +61,7 @@ func RestoreDispatcher(j *ledger.AnchoredJournal,maxIncidents int,transport Tran
  }
  fail:=func()(*IncidentManager,*Dispatcher,error){return nil,nil,ErrDeliveryStorage}
  seen:=make(map[string]struct{},len(events))
+ deliveryIDs:=make(map[string]string)
  active:=make(map[string]recoveredIncidentStage)
  var last time.Time
  for _,ev:=range events{
@@ -94,6 +95,10 @@ func RestoreDispatcher(j *ledger.AnchoredJournal,maxIncidents int,transport Tran
    case "queued":
     if item!=nil || len(d.deliveries)>=cfg.MaxPending ||
      ev.DeliveryAttempt!=0 || ev.IncidentRevision!=stage.revision{return fail()}
+    // A delivery ID is also the transport idempotency key. A second
+    // incident must never reuse it, even in an authenticated history.
+    if _,exists:=deliveryIDs[ev.DeliveryID];exists{return fail()}
+    deliveryIDs[ev.DeliveryID]=ev.IncidentID
     d.deliveries[ev.IncidentID]=&Delivery{
      ID:ev.DeliveryID,IncidentID:ev.IncidentID,
      IncidentRevision:ev.IncidentRevision,Status:DeliveryQueued,
