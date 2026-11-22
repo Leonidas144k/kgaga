@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Leonidas144k/kgaga/internal/demo"
 	"github.com/Leonidas144k/kgaga/internal/passport"
 	"github.com/Leonidas144k/kgaga/internal/policy"
 	"github.com/Leonidas144k/kgaga/internal/proxy"
@@ -343,6 +344,13 @@ func main() {
 	case "vault-init", "vault-put", "vault-import", "vault-activate", "vault-revoke":
 		runVaultOperator(os.Args[1],os.Args[2:])
 
+	case "demo-sentinel":
+		fs:=flag.NewFlagSet("demo-sentinel",flag.ExitOnError)
+		synthetic:=fs.Bool("synthetic",false,"Required: run isolated synthetic demonstration only")
+		fs.Parse(os.Args[2:])
+		if !*synthetic || fs.NArg()!=0 { log.Fatal("demo-sentinel requires --synthetic and no positional arguments") }
+		if err:=demo.RunSentinel(os.Stdout);err!=nil { log.Fatalf("synthetic demonstration failed: %v",err) }
+
 	case "proxy":
 		fs := flag.NewFlagSet("proxy", flag.ExitOnError)
 		configPath:=fs.String("config","kgaga.yaml","Policy file to validate and load")
@@ -473,6 +481,7 @@ func printUsage() {
 	fmt.Println(`Kgaga — Cryptographic Identity & Guardrails for AI Agents
 
 Usage:
+  kgaga demo-sentinel --synthetic                            Run ephemeral synthetic-only Sentinel/Ledger lifecycle
   kgaga init                                                Generate root Ed25519 keys & kgaga.yaml
   kgaga mint --agent <id> --owner <email> --scopes <s1,s2> --audience <service>  Mint an Agent Passport
   kgaga keys-init                                           Initialize empty public trust store
