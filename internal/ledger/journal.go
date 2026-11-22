@@ -2,6 +2,7 @@ package ledger
 
 import (
  "errors"
+ "fmt"
  "encoding/hex"
 
  "github.com/Leonidas144k/kgaga/internal/audit"
@@ -103,18 +104,18 @@ func parseJournalHead(h Head,id StreamID)([32]byte,error){
 func InitJournal(dir string,key Key,id StreamID)(*Journal,error){
  if key==(Key{}) || id==(StreamID{}){return nil,ErrInvalid}
  abs,err:=journalParent(dir)
- if err!=nil{return nil,err}
- if err:=os.Mkdir(abs,0700);err!=nil{return nil,ErrJournal}
- if err:=os.Mkdir(filepath.Join(abs,journalLockName),0700);err!=nil{return nil,ErrJournal}
+ if err!=nil{return nil,fmt.Errorf("journal parent: %w",err)}
+ if err:=os.Mkdir(abs,0700);err!=nil{return nil,fmt.Errorf("journal directory creation: %w",ErrJournal)}
+ if err:=os.Mkdir(filepath.Join(abs,journalLockName),0700);err!=nil{return nil,fmt.Errorf("journal lock creation: %w",ErrJournal)}
  path:=filepath.Join(abs,journalFilename)
  f,err:=os.OpenFile(path,os.O_RDWR|os.O_APPEND|os.O_CREATE|os.O_EXCL,0600)
- if err!=nil{return nil,ErrJournal}
- if err:=f.Sync();err!=nil{_ = f.Close();return nil,ErrJournal}
- if err:=syncJournalDir(filepath.Dir(abs));err!=nil{_ = f.Close();return nil,err}
- if err:=syncJournalDir(abs);err!=nil{_ = f.Close();return nil,err}
+ if err!=nil{return nil,fmt.Errorf("journal file creation: %w",ErrJournal)}
+ if err:=f.Sync();err!=nil{_ = f.Close();return nil,fmt.Errorf("initial journal sync: %w: %v",ErrJournal,err)}
+ if err:=syncJournalDir(filepath.Dir(abs));err!=nil{_ = f.Close();return nil,fmt.Errorf("parent directory sync: %w",err)}
+ if err:=syncJournalDir(abs);err!=nil{_ = f.Close();return nil,fmt.Errorf("journal directory sync: %w",err)}
  var zero [32]byte
  j,err:=makeJournal(abs,key,id,f,head(id,0,zero))
- if err!=nil{_ = f.Close();return nil,err}
+ if err!=nil{_ = f.Close();return nil,fmt.Errorf("journal initial metadata: %w",err)}
  return j,nil
 }
 
