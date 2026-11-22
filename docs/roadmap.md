@@ -184,3 +184,7 @@ Increment 007 passed ten-repeat local Sentinel race tests, five-repeat Ledger ra
 ### Sentinel & Ledger increment 009
 
 Increment 008 passed local repeated Sentinel/ Ledger race tests, full integration and CLI lifecycle, with GitHub CI 45033403402. Increment 009 adds full bounded, checkpoint-verified ordered incident/delivery history replay, reconstruction of accepted/failed/queued/uncertain delivery states, strict transition validation, and a safeguard rejecting fresh dispatchers that could forget previous accepted/uncertain sends. No operator/provider reconciliation API, external anchor, real delivery transport or runtime CLI activation; CI/local validation pending.
+
+### Sentinel & Ledger increment 010
+
+Increment 009 passed user-local ten-repeat Sentinel race tests, five-repeat Ledger race tests, full suite and lifecycle, plus CI 45037458526. Increment 010 focuses on adversarial replay ID uniqueness, duplicate terminal outcomes, authenticated journal tampering, residual-risk disclosure and internal preview gates. No independent assurance, distribution license change, main merge, production use or automatic enforcement. Validation pending.

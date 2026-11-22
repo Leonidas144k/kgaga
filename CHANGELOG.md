@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.6.0 Sentinel & Ledger development
 
+- Harden incident notification recovery by rejecting delivery idempotency keys reused across incidents; add adversarial rollback, duplicated-outcome and tamper regressions and internal preview release gates.
+
 - Restore advisory delivery states from verified ordered Ledger history; block fresh dispatcher resets and uncertain in-flight resends, preserving stable IDs, attempt bounds and cooldowns.
 
 - Add explicit manual advisory delivery interface with audited intent/outcomes, retry limits, idempotency metadata, and sanitized operator notices. Transport plugin and restart replay pending.

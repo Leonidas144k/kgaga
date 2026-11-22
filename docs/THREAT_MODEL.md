@@ -48,3 +48,18 @@ Upstream TLS verifies the configured hostname/IP and certificate chain; optional
 | Resource loss | Individual record/parser limits, gateway admission bounds | Aggregate Vault storage, wrap quota enforcement, recovery, sustained load |
 
 Preview excludes real credentials, provider-native leases, master rotation, multi-node state, and production deployment. Increment 010 GitHub CI succeeded at d2ad5d2 (44775885437); developer-local confirmation and independent review remain outstanding. Independent protocol/cryptographic review, explicit release approval and current dependency/toolchain checks remain open.
+
+## Sentinel & Ledger v0.6.0 review (Increment 010)
+
+| Threat | Development-preview control | Remaining gap |
+|---|---|---|
+| Event deletion, alteration or suffix rollback | HMAC chain and verified Head; private single-writer journal with separate authenticated local checkpoint | An independently retained trusted expected Head is essential; no external rollback-resistant anchor or independent key custody |
+| Malicious local filesystem changes | Inode/permissions/size checks and full verification on open/replay | Privileged operator or hostile same-host writer can bypass cooperative locking; same-size modifications may evade intermediate checks |
+| Journal/checkpoint interrupted commit | Write ordering, fail-closed storage errors and retained crash locks | Operator-managed offline reconciliation; no automated durable transaction or recovery protocol |
+| Duplicate, forged or reordered incidents | Strict revision/state replay and globally unique attempt IDs | Incident manager state not distributed; operator identity provided by trusted caller, not authenticated by Kgaga |
+| Replay of delivery ID across incidents | Globally unique delivery ID constraint during recovery | No independent provider-side idempotency proof |
+| Transport accepted but outcome not recorded | Recovered `uncertain` attempts block all retries | Requires independent provider reconciliation before any safe resumption |
+| Alert metadata disclosures and noise | Bounded advisory-only payload and limited detection thresholds | Identifiers remain potentially sensitive; false positives, delivery destinations and human response not assessed |
+| Resource exhaustion | Quotas and full-history replay bound at 16 MiB | A legitimate journal up to 64 MiB may no longer be restorable by Sentinel; backpressure, archival and scaling unaddressed |
+
+Security conclusions above are implementation-level observations and synthetic tests, **not certification or an independent penetration test**. Sentinel remains disconnected from default runtime.

@@ -1,6 +1,6 @@
 # Kgaga Sentinel & Ledger v0.6.0 — development architecture
 
-Status: increment 009, **verified delivery-state reconstruction and uncertain-send containment**. No default CLI Ledger or Sentinel runtime integration is implemented.
+Status: increment 010, **internal adversarial-review and release-gate preparation**. No default CLI Ledger or Sentinel runtime integration is implemented.
 
 ## Ledger scope (increment 001)
 
@@ -73,6 +73,13 @@ Default policy permits at most three manually triggered sends, a minimum one-sec
 **Critical crash semantics:** an `attempted` record without a verified terminal `accepted` or `failed` outcome is classified `uncertain`. The dispatcher exposes this as `ErrDeliveryUncertain` and **never resends it automatically or manually through the current API**. The operator must independently reconcile provider status and the stable delivery ID; a safe reconciliation protocol has not been implemented. Constructing a fresh `NewDispatcher` against a checkpointed journal with historical delivery events now fails instead of resetting accepted or uncertain delivery state.
 
 Limitations: the recovery API is programmatic, single-process and development-preview only. It requires one trusted owner of journal writes, an externally obtained expected Head, keys outside the Ledger directory and a transport that can honour delivery IDs. No real provider adapter, externally anchored checkpoint, independently verified provider receipt, reconciliation mutation API, multi-process coordination, CLI activation, secure operator authentication or notification queue worker exists. A successful `accepted` outcome establishes transport adapter acceptance, **not human receipt**. Never use real alert destinations or production credentials in this preview.
+
+
+## Increment 010 — adversarial review and internal preview gates
+
+**Review evidence:** source-level and synthetic fault-injection review, not an independent penetration test. The replay validator now rejects duplicate delivery IDs across incident histories, since each ID is also an upstream idempotency key. Synthetic regression tests cover cross-incident reuse, duplicate terminal acceptance and unexpected modification of a checkpoint-bound journal. CI and developer-local validation for this increment are separate gates, not inferred from previous increments.
+
+**Residual risks:** the operator, OS, key custody, local filesystem and supplied audit stream are trusted. No external checkpoint witness, durable external backup, hardware-backed keys, tamper-resistant privileged-host storage, multi-host lock/consensus, authenticated operator RBAC, automatic recovery, verified delivery receipts, provider-side idempotency, or independent cryptographic/protocol assessment exists. A send timed out or interrupted after its `attempted` record remains uncertain and cannot be safely resent without out-of-band reconciliation. A provider-returned success is not a read receipt. The in-memory Sentinel detector resets its sliding windows on restart. Unsupported large journals (more than the 16 MiB replay cap) fail closed. Do not enable production or send real security notifications based on these tests.
 
 ## Planned next increments
 
