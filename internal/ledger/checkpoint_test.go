@@ -73,6 +73,7 @@ func TestInterruptedCheckpointPublicationFailsClosed(t *testing.T){
  if _,err:=OpenAnchoredJournal(jdir,wdir,chainKey,witness,id,expected);!errors.Is(err,ErrAnchorLocked){t.Fatal("crash lock bypassed")}
  // Test-only explicit offline cleanup; production has no recovery API.
  if err:=os.Remove(filepath.Join(wdir,checkpointLockName));err!=nil{t.Fatal(err)}
+ if err:=os.Remove(filepath.Join(jdir,journalLockName));err!=nil{t.Fatal(err)}
  if _,err:=OpenAnchoredJournal(jdir,wdir,chainKey,witness,id,expected);!errors.Is(err,ErrCheckpoint){t.Fatal("journal/checkpoint divergence accepted")}
 }
 
@@ -86,7 +87,9 @@ func TestCheckpointStorageBoundsAndIdentity(t *testing.T){
  checkpointPath:=filepath.Join(wdir,checkpointFilename)
  if err:=os.Chmod(checkpointPath,0644);err!=nil{t.Fatal(err)}
  if _,err:=a.Head();!errors.Is(err,ErrCheckpoint){t.Fatal("unsafe checkpoint accepted")}
- if err:=a.Close();!errors.Is(err,ErrCheckpoint){t.Fatal("failed witness released locks")}
+ if err:=a.Close();err==nil{t.Fatal("failed witness closed cleanly")}
+ if _,err:=os.Lstat(filepath.Join(wdir,checkpointLockName));err!=nil{t.Fatal("failed witness released checkpoint lock")}
+ if _,err:=os.Lstat(filepath.Join(jdir,journalLockName));err!=nil{t.Fatal("failed witness released journal lock")}
  if err:=os.Chmod(checkpointPath,0600);err!=nil{t.Fatal(err)}
  if _,err:=OpenAnchoredJournal(jdir,wdir,chainKey,witness,id,old);!errors.Is(err,ErrAnchorLocked){t.Fatal("unsafe close lost crash lock")}
 }
