@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.6.0 Sentinel & Ledger development
 
+- Restore advisory incident state from bounded fully verified checkpointed Ledger history, rejecting orphaned, conflicting or malformed transitions; no automatic crash recovery.
+
 - Add advisory Sentinel incident records with bounded open/acknowledged/resolved workflow, explicit operator review and checkpointed Ledger evidence; programmatic opt-in only.
 
 - Add bounded in-memory advisory Sentinel detector for credential denials, exchange failures and withheld responses, with unique-attempt correlation and conservative alert suppression; no enforcement or gateway runtime wiring.

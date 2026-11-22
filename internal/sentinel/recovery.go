@@ -38,7 +38,8 @@ func recoveredAlert(e audit.Event, t time.Time) (Alert, error) {
 		Owner: e.Owner, Audience: e.Audience,
 		Count: e.IncidentCount, WindowSeconds: e.IncidentWindowSeconds,
 	}
-	if !validAlert(a, t) {
+	observed, err := replayTime(a.ObservedAt)
+	if err != nil || observed.After(t.Add(time.Minute)) || !validAlert(a, observed) {
 		return Alert{}, ErrIncidentHistory
 	}
 	return a, nil

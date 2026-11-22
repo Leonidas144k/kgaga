@@ -1,6 +1,6 @@
 # Kgaga Sentinel & Ledger v0.6.0 — development architecture
 
-Status: increment 006, **advisory incident workflow foundation**. No default CLI Ledger or Sentinel runtime integration is implemented.
+Status: increment 007, **verified incident-state reconstruction**. No default CLI Ledger or Sentinel runtime integration is implemented.
 
 ## Ledger scope (increment 001)
 
@@ -47,6 +47,14 @@ Current signal groups are: `credential_denial_burst` (denied, denied_before_disp
 Every successful state transition is first appended as a `kgaga.vault.audit.v1` event carrying narrowly selected incident metadata to the existing checkpointed Ledger interface. The event is accepted **before** the manager updates in-memory case state. If Ledger append is ambiguous or fails, the manager latches unavailable rather than guessing which transition committed. This adapter is programmatic opt-in, not a Gateway/CLI default and not an external delivery system. Only operator identifiers supplied by trusted calling code are recorded; there is no independent operator login, RBAC or cryptographic attestation. No automatic suspension, credential revocation or policy changes.
 
 **Limitations:** the incident manager does not rebuild its index or cases from the Ledger after restart. It has no notifications, acknowledgement deadlines, operational escalation, backup/recovery, multi-process coordination, trusted externally anchored Head, or real-time provider integrations. Callers must validate alert provenance. Incident records add fields to the audit event schema; no secret payloads, raw passports or signed proofs are added. Treat as synthetic-data internal development only.
+
+## Increment 007 — verified incident recovery
+
+`ledger.AnchoredJournal.IncidentHistory(limit)` reads from an **already open and checkpoint-verified** local journal and re-verifies the complete bounded stream, including non-incident entries, before returning canonical incident transitions. It bounds the replay to 16 MiB, checks the journal/checkpoint heads before and after reading, and fails closed on corruption or divergence. No arbitrary caller-provided event slice or untrusted local checkpoint can substitute for the independent expected head required during journal opening.
+
+`sentinel.RestoreIncidentManager` reconstructs open, acknowledged and resolved incidents by validating every recorded transition in chronological order, including unique attempt IDs, incident IDs, revision progression, operator IDs, alert metadata and allowed state changes. It reconstructs the active index to avoid duplicate unresolved cases. It rejects conflicting or orphaned transitions, excess case count, altered metadata, unsupported event fields and backward timestamps. It does not emit events or repair state during replay. A full journal above 16 MiB cannot yet be used for restart restoration, even though the underlying journal allows 64 MiB.
+
+**Limitations:** restart recovery is explicit and programmatic only. No automated crash lock cleanup, trusted external checkpoint service, rollback defense, key custody, operator authentication, cross-process exclusivity, alert delivery or replay of detector sliding windows exists. Only one incident manager may use the journal for incident writes. This does not reconstruct arbitrary application state or prove that an alert was delivered. This implementation remains synthetic-data development preview.
 
 ## Planned next increments
 
