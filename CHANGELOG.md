@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased — v0.5.0 vault development
+
+- Document completed Vault implementation and CLI preview semantics, successful Increment 010 CI evidence and explicit remaining release gates. No production release authorization.
+
+- Latch audit sink write failures, regression-test revocation during dispatch/release intent, fuzz Vault formats in CI, and document development-preview release gates.
+
+- Add structured correlated Vault usage and operator audit events with checked intent writes and fail-closed dispatch/release on writer errors. Durable and tamper-evident Ledger remains future work.
+
+- Add operator-only version-pinned HashiCorp KV v2 HTTPS imports via a provider interface. Imported credentials remain staged and require local activation; no live fetch or automatic provider revocation propagation.
+
+- Add staged/active credential lifecycle with explicit activation, monotonic rotation, revocation, authenticated persistent state and live gateway checks. Existing records require activation; pinned policies do not automatically advance.
+
+- Require authenticated timed bearer records in Vault mode; enforce one-hour maximum credential validity and per-request single-use leases capped at 15 seconds, with deadline-bound exchanges. Existing untimed tokens require explicit new version provisioning.
+
+- Add opt-in HTTPS Vault gateway mode with mandatory exact grants, fixed bearer injection, exact-token response inspection and local operator stdin provisioning. No general DLP or production assurance.
+
+- Add strict deny-by-default Vault access policy evaluator with exact operation and agent grants, literal required scopes, pinned secret metadata and no delegated access. Gateway enforcement follows separately.
+
+- Add managed envelope encryption with separate local operator KEK custody, fresh DEKs, authenticated wrapping and single-file immutable publication. No automatic key rotation or gateway access.
+
+- Add private local immutable encrypted record storage with explicit identity, bounded reads, exclusive publication and restart/concurrency regression tests. Caller-managed data keys only.
+
+- Add isolated AES-256-GCM record primitives with authenticated record metadata, bounded versioned ciphertext format, cryptographic key/nonce generation and tamper tests. No storage or agent/gateway secret API yet.
+
 ## Unreleased — v0.4.0 gateway development
 
 - Adversarial regression coverage: reject ambiguous signed v2 envelopes, recheck live credentials and proof freshness before dispatch, repeat replay tests and fuzz the envelope parser in CI.

@@ -266,6 +266,30 @@ Each inbound line contains the passport, proof and unpadded base64url of the exa
 
 This is not a process sandbox, native MCP-client compatibility, full duplex, response streaming, independent workload attestation or a complete session implementation. Do not run untrusted child commands with access to issuer keys, holder keys, state directories, credentials or sensitive inherited environment variables. The child inherits the operator's OS permissions, working directory and environment. Use external OS isolation and a separately privileged operator for real testing; process descendants are not comprehensively contained. Unsolicited server messages are unsupported and never forwarded as such. No continuous revocation of already dispatched actions is claimed.
 
+## Vault v0.5.0 (synthetic-data development preview)
+
+Vault is an **explicitly opt-in** credential broker for the HTTPS Gateway. It stores immutable AES-256-GCM encrypted secret versions, wraps per-version data keys with an external operator-managed KEK, and requires a separate strict policy binding agent, owner, audience, HTTPS origin, operation, all required scopes and pinned secret version. A signed passport alone does not grant secret access. Staged credentials require explicit activation; retirement and revocation are enforced through live lifecycle checks. The gateway grants only a one-request internal lease (at most 15 seconds). This limits Kgaga's use of a token, **not the token's provider-side lifetime**.
+
+The local key file is a raw master key under filesystem permissions, not an HSM/KMS. The structured audit sink writes to stderr, not a durable tamper-evident ledger. See [Vault architecture and limitations](docs/VAULT_ARCHITECTURE.md) and [release gates](docs/RELEASE_CHECKLIST.md). **Use synthetic credentials only; do not expose the gateway publicly or distribute production assurance claims.**
+
+### Operator-only Vault CLI
+
+The following are flag templates, **not ready-to-run commands**. Replace every angle-bracket placeholder with independent, operator-owned identifiers and paths. Create and protect the external KEK parent directory separately (mode 0700), keep the key file outside the encrypted Vault directory, and never commit either. Do not run init against any existing or partially initialized Vault.
+
+```text
+kgaga vault-init --vault-dir <new-dir> --vault-id <32-lowercase-hex> --vault-kek-file <protected-external-key-path> --vault-kek-id <32-lowercase-hex>
+kgaga vault-put --vault-dir <dir> --vault-id <id> --vault-kek-file <key-path> --vault-kek-id <key-id> --name <name> --version <positive-version> --not-before <unix-seconds> --expires-at <unix-seconds>
+kgaga vault-activate --vault-dir <dir> --vault-id <id> --vault-kek-file <key-path> --vault-kek-id <key-id> --name <name> --version <positive-version>
+kgaga vault-revoke --vault-dir <dir> --vault-id <id> --vault-kek-file <key-path> --vault-kek-id <key-id> --name <name> --version <positive-version>
+kgaga vault-import --help
+```
+
+`vault-put` reads the exact 16–4096-byte bearer value from protected, non-interactive stdin with **no trailing newline**; it never accepts the token as a command-line flag. Validity must be explicitly declared and must not exceed one hour. `vault-import` also reads an operator's HashiCorp Vault token from protected stdin and requires pinned KV v2 `--provider-origin`, `--provider-mount`, `--provider-path`, `--provider-field` and `--provider-version`; optional `--provider-ca` selects a private TLS CA bundle. Import is a *point-in-time staged copy*, not live provider synchronization or provider-native credential issuance.
+
+A protected gateway is enabled only when **all five** `proxy` flags are supplied: `--vault-policy`, `--vault-dir`, `--vault-id`, `--vault-kek-file`, `--vault-kek-id`. Listener TLS, verified upstream HTTPS and `redact_secrets: true` are required. In this mode every protected request requires an exact Vault grant; failures never fall back to ordinary forwarding. Only fixed outbound `Authorization: Bearer` injection is supported; secrets are never returned through an agent-facing Vault API. The policy is bound at startup and must be deliberately updated/reloaded for a new pinned version. Stdio wrapper credential injection is not supported.
+
+For validation, run `go mod verify`, `go vet ./...`, `go test -race ./...` and the isolated synthetic-data lifecycle script. CI additionally repeats audit/brokerage tests and fuzzes record and provider parsers. Passing these tests is **not** evidence of independent security certification. External provider revocation does not automatically revoke imported local credentials, and no distributed-state, rollback-resistance or full recovery guarantee is offered.
+
 ## Migration from Pangolin v0.1
 
 This is an early-stage security prototype, not production-ready. The stdio wrapper authenticates each signed frame and enforces MCP policy, but is not an OS sandbox or a complete MCP transport. The current CLI requires v2 passports issued by `kgaga-ca`, with a key thumbprint and explicit audience. Legacy passports are rejected; reissue them before upgrading. The legacy internal verifier is retained for regression coverage, not exposed as a CLI fallback. The HTTP input remains `X-Agent-Passport`. Upstream identity headers are `X-Kgaga-Verified-Agent` / `X-Kgaga-Agent-Owner`; the legacy Pangolin equivalents are also emitted for compatibility. The legacy redaction marker is also preserved. These are not trademark or identity verification claims.

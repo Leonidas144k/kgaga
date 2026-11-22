@@ -90,8 +90,13 @@ type inspectedResponse struct {
 
 // exchange never follows redirects, forwards 1xx messages or streams
 // uninspected bytes. TLS peer validation is Go's normal verification.
-func exchange(r *http.Request,target *url.URL,transport *http.Transport,claims *passport.AgentClaims,body []byte,info *mcp.InspectionResult,inspectSecrets bool) (*inspectedResponse,error) {
-	ctx,cancel:=context.WithTimeout(r.Context(),upstreamTimeout)
+func exchange(r *http.Request,target *url.URL,transport *http.Transport,claims *passport.AgentClaims,body []byte,info *mcp.InspectionResult,inspectSecrets bool,secret []byte,leaseDeadline time.Time) (*inspectedResponse,error) {
+	deadline:=time.Now().Add(upstreamTimeout)
+	if len(secret)>0 {
+		if leaseDeadline.IsZero() || !time.Now().Before(leaseDeadline) { return nil,errLeaseExpired }
+		if leaseDeadline.Before(deadline) { deadline=leaseDeadline }
+	}
+	ctx,cancel:=context.WithDeadline(r.Context(),deadline)
 	defer cancel()
 	u:=*target
 	u.Path=r.URL.Path
@@ -117,6 +122,15 @@ func exchange(r *http.Request,target *url.URL,transport *http.Transport,claims *
 	// Prevent automatic body replay via GetBody; the transport may still
 	// retry eligible zero-body idempotent requests under its own rules.
 	out.GetBody=nil
+	token:=string(secret)
+	if token!="" {
+		if target.Scheme!="https" || transport.TLSClientConfig==nil || transport.TLSClientConfig.InsecureSkipVerify { return nil,errors.New("vault requires verified TLS") }
+		out.Header.Set("Authorization","Bearer "+token)
+		// Header strings cannot be guaranteed erased; remove our reference
+		// after transport completes. Never log raw transport errors here.
+		defer out.Header.Del("Authorization")
+	}
+	if err:=ctx.Err(); err!=nil { return nil,err }
 	resp,err:=transport.RoundTrip(out)
 	if err!=nil { return nil,err }
 	defer resp.Body.Close()
@@ -132,7 +146,7 @@ func exchange(r *http.Request,target *url.URL,transport *http.Transport,claims *
 	kind,err:=contentKind(resp.Header,len(data)>0)
 	if err!=nil { return nil,err }
 	if len(data)>0 {
-		if err:=policy.InspectPayload(data,kind=="application/json",inspectSecrets); err!=nil { return nil,err }
+		if err:=policy.InspectPayloadWithSecret(data,kind=="application/json",inspectSecrets,token); err!=nil { return nil,err }
 	}
 	if info!=nil {
 		if info.Notification {
@@ -145,6 +159,7 @@ func exchange(r *http.Request,target *url.URL,transport *http.Transport,claims *
 	// Only explicitly permitted response metadata is released, with a
 	// fixed cache policy. All cookies, locations and other headers vanish.
 	if v:=resp.Header.Get("Content-Type"); v!="" {
+		if token!="" && strings.Contains(v,token) { return nil,errors.New("protected credential in response") }
 		if err:=checkMetadata([]string{v},inspectSecrets); err!=nil { return nil,err }
 		headers.Set("Content-Type",v)
 	}
@@ -152,6 +167,7 @@ func exchange(r *http.Request,target *url.URL,transport *http.Transport,claims *
 		for _,name:=range []string{"Mcp-Session-Id","MCP-Protocol-Version"} {
 			values:=resp.Header.Values(name)
 			if len(values)>1 { return nil,errors.New("ambiguous MCP response header") }
+			if token!="" && len(values)>0 && (name=="Mcp-Session-Id" || strings.Contains(values[0],token)) { return nil,errors.New("unsupported vault MCP response metadata") }
 			if err:=checkMetadata(values,inspectSecrets); err!=nil { return nil,err }
 			if len(values)==1 { headers.Set(name,values[0]) }
 		}
@@ -161,5 +177,6 @@ func exchange(r *http.Request,target *url.URL,transport *http.Transport,claims *
 	if resp.StatusCode!=204 && resp.StatusCode!=205 && r.Method!="HEAD" {
 		headers.Set("Content-Length",strconv.Itoa(len(data)))
 	}
+	if err:=ctx.Err(); err!=nil { return nil,err }
 	return &inspectedResponse{status:resp.StatusCode,headers:headers,body:data},nil
 }

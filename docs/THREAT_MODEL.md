@@ -35,3 +35,16 @@ No claims of protection against arbitrary prompt injection, malicious models, co
 ## Gateway transport update (increment 8)
 
 Upstream TLS verifies the configured hostname/IP and certificate chain; optional client certificates enable mTLS when the server requires and authorizes them. Cleartext upstream is restricted to explicit literal loopback. External listeners require TLS. PKI compromise, certificate revocation/rotation, direct backend access, network isolation and deployment assurance remain residual risks. Local/CI validation passed at 5784d51 and final gateway baseline 8bbfe0f.
+
+## Vault development-preview threat review
+
+| Threat | Implemented preview defense | Residual risk |
+|---|---|---|
+| Ciphertext/key substitution | AES-GCM envelope and domain-bound context | KEK compromise, rollback, memory exposure |
+| Secret policy bypass | Exact nondelegated identity, scope, HTTPS origin and operation grants | Trusted operator/backend semantics and indirect disclosure |
+| Expired or retired credential | Authenticated expiry, pinned version, live HMAC lifecycle and one-use lease | Clock trust, state deletion/rollback, non-atomic dispatch |
+| Provider impersonation | Verified pinned HTTPS import, bounded strict response | Trusted PKI/operator; no live provider revocation |
+| Audit sink loss | Checked intent writes, latched on error, post-write rechecks | No durable collection or tamper-evident chain; sink can block |
+| Resource loss | Individual record/parser limits, gateway admission bounds | Aggregate Vault storage, wrap quota enforcement, recovery, sustained load |
+
+Preview excludes real credentials, provider-native leases, master rotation, multi-node state, and production deployment. Increment 010 GitHub CI succeeded at d2ad5d2 (44775885437); developer-local confirmation and independent review remain outstanding. Independent protocol/cryptographic review, explicit release approval and current dependency/toolchain checks remain open.

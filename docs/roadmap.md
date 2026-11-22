@@ -100,3 +100,51 @@ Closed v2 credential wire schema and canonical proof signature encoding; final l
 ### Gateway release review
 
 All nine implementation increments validated locally and in CI at 8bbfe0f (CI 44711337360). Local fuzz run: 21,532 executions, 27 new interesting inputs, no failure. Release-review documentation reconciles current architecture and threat model. Dependency/toolchain vulnerability review, internal preview approval, merge and main CI remain open. No tag or distribution approval.
+
+## Vault v0.5.0 development
+
+Gateway merged via PR #3 at 2fcecf6. Both post-merge CI runs (44713495741, 44713489325) succeeded. Local govulncheck reported no vulnerabilities after automatic newer scanner toolchain selection; release build/scanner standardization and artifact checks remain open. No tag.
+
+### Vault increment 1
+
+Separate internal/vault package and documented architecture. AES-256-GCM record primitive, random data keys/identifiers/nonces, bounded KGV1 format, domain-separated authenticated record context and negative tests. No persistent storage, key wrapping, access policy or gateway integration yet. Validation pending. See [Vault architecture](VAULT_ARCHITECTURE.md).
+
+### Vault increment 2
+
+Increment 1 passed ten local race-test repetitions, full lifecycle and CI at 15b5236 (44714133145). Increment 2 adds explicit initialized vault identity, bounded private local encrypted record storage, exclusive immutable version publication, normal restart retrieval with caller-owned key and expected context, and tampering, substitution, permissions and concurrent writer tests. Validation pending. No live secrets; no key custody, automatic recovery, aggregate capacity bounds or gateway access.
+
+### Vault increment 3
+
+Increment 2 passed local repeated race tests and CI at a2689b1 (44719713905). Increment 3 adds external private KEK creation/loading, per-attempt random DEKs, domain-separated AES-GCM wrapping, immutable managed KGE1 records and restart/tamper/custody/concurrent publication tests. Validation pending. No live secrets, enforced KEK usage counter, automatic rotation, KMS or agent access yet.
+
+### Vault increment 4
+
+Increment 3 passed repeated local race tests, full lifecycle and CI at e344718 (44721889128). Increment 4 adds strict separate YAML Vault policy, exact identity/owner/audience/HTTPS origin/method/target/MCP tool grants, all-scopes checks, pinned secret versions and vault identity, default-deny immutable evaluation, invalid configuration and scope/operation isolation tests. Validation pending. No gateway wiring, secret reads, delegated Vault grants or injection yet.
+
+### Vault increment 5
+
+Increment 4 passed repeated local policy/vault tests and CI at b6a5079 (44727758123). Increment 5 adds opt-in mandatory Vault gateway authorization, independent identity/origin binding, fixed bearer injection over verified TLS, fresh admission checks, exact response token blocking and operator-only init/put CLI. Synthetic HTTPS integration and negative tests; validation pending. No production credentials, enforced KEK wrapping quota, general DLP, dynamic leases or rotation.
+
+### Vault increment 6
+
+Increment 5 passed five repeated local HTTPS injection race tests, full regression/lifecycle and CI at 169dba1 (44728550778). Increment 6 adds authenticated timed bearer records, mandatory expiry metadata on provisioning, maximum one-hour credential window, one-use internal leases capped at 15 seconds or remaining credential/passport life, transport deadlines and final release checks. Negative tests include legacy/future/expired record denial and lease concurrency/deadline. Validation pending. No provider-side issuance or revocation guarantees.
+
+### Vault increment 7
+
+Increment 6 passed repeated local lease/injection tests, regression lifecycle and CI at a3dd181 (44729786353). Increment 7 adds staged/active/retired/revoked versions, HMAC-authenticated bounded per-name lifecycle state, exclusive administrative update locks, explicit activation and revocation commands, monotonic rotation and live gateway checks before decryption/dispatch/response release. Includes restart, tamper, cross-name, concurrent activation and in-flight revocation tests. Validation pending; no rollback resistance, provider-side revocation, master key rotation or production assurance.
+
+### Vault increment 8
+
+Increment 7 passed repeated local lifecycle/injection tests and CI at 0c4bccf (44748823740). Increment 8 adds a provider-independent operator import interface, concrete HashiCorp KV v2 adapter (exact remote version/field, verified TLS, no redirects, bounded strict response, deletion metadata checks), staged immutable publication and synthetic HTTPS/negative tests. Validation pending. Point-in-time import only; additional providers, native dynamic issuance, source audit and live provider revocation remain open.
+
+### Vault increment 9
+
+Increment 8 passed repeated local provider/policy/vault/injection tests and CI at 2d4aafb (44750632476). Increment 9 adds correlated structured credential-use and operator audit, fixed metadata-only phases, checked intent writes before dispatch/mutation/release, sink failure tests and post-write live checks. Validation pending. No durable or tamper-evident Ledger, verified operator identity or proof of delivery/business success.
+
+### Vault increment 10
+
+Increment 9 corrected at 02c6948; repeated local audit/policy/vault/brokerage tests and full lifecycle passed, CI 44764585616 succeeded. Increment 10 latches audit sink write failures, removes redundant success log after final Vault check, tests revocation during audit writes, adds Vault binary/JSON parser fuzzing and release gates. Validation pending; internal preview only, production blockers remain open.
+
+### Vault development-preview review status
+
+Increment 010 CI at d2ad5d2 succeeded (44775885437), including repeated audit/brokerage tests, race suite, parser fuzzing, build and CLI lifecycle. The branch is 11 commits ahead of main with no divergence at that snapshot. Documentation and PR review are still required. No live credentials, production release or distribution tag approved. Run current govulncheck before merge review; Go 1.23.4 is the declared module toolchain, and the earlier scan predates Vault.

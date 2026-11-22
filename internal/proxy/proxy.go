@@ -12,10 +12,12 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/Leonidas144k/kgaga/internal/audit"
 	"github.com/Leonidas144k/kgaga/internal/mcp"
 	"github.com/Leonidas144k/kgaga/internal/passport"
 	"github.com/Leonidas144k/kgaga/internal/policy"
 	"github.com/Leonidas144k/kgaga/internal/revocation"
+	"github.com/Leonidas144k/kgaga/internal/vault"
 	"github.com/Leonidas144k/kgaga/internal/registry"
 	"github.com/Leonidas144k/kgaga/internal/keyring"
 	"github.com/Leonidas144k/kgaga/internal/delegation"
@@ -44,11 +46,22 @@ const maxRequestBytes = 1 << 20
 
 // NewHandler retains the legacy verifier for explicit internal compatibility.
 func NewHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, options ...UpstreamTLSOptions) (http.Handler, error) {
-	return newHandler(targetURL, pubKey, cfg, "", nil, nil, nil, nil, options...)
+	return newHandler(targetURL, pubKey, cfg, "", nil, nil, nil, nil,nil, options...)
 }
 
 // NewHandlerForAudience enforces v2 passports without a legacy fallback.
 func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, replay *revocation.Store, options ...UpstreamTLSOptions) (http.Handler, error) {
+	return newAudienceHandler(targetURL,trust,cfg,audience,store,reg,replay,nil,options...)
+}
+
+// NewHandlerWithVault requires the additional policy for every protected
+// request. A nil broker cannot accidentally enable plain gateway mode.
+func NewHandlerWithVault(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, replay *revocation.Store, broker *VaultGateway, options ...UpstreamTLSOptions) (http.Handler,error) {
+	if broker==nil { return nil,errors.New("vault configuration required") }
+	return newAudienceHandler(targetURL,trust,cfg,audience,store,reg,replay,broker,options...)
+}
+
+func newAudienceHandler(targetURL string, trust *keyring.Store, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, replay *revocation.Store, broker *VaultGateway, options ...UpstreamTLSOptions) (http.Handler,error) {
 	if err := passport.ValidateAudience(audience); err != nil {
 		return nil, err
 	}
@@ -57,10 +70,10 @@ func NewHandlerForAudience(targetURL string, trust *keyring.Store, cfg *policy.C
 	if err:=trust.Ready(); err!=nil { return nil,err }
 	if err:=replay.Ready(); err!=nil { return nil,err }
 	if store.SameDirectory(replay) { return nil,errors.New("replay and revocation stores must be separate") }
-	return newHandler(targetURL, nil, cfg, audience, store, reg, trust, replay,options...)
+	return newHandler(targetURL, nil, cfg, audience, store, reg, trust, replay,broker,options...)
 }
 
-func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, trust *keyring.Store, replay *revocation.Store, options ...UpstreamTLSOptions) (http.Handler, error) {
+func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, audience string, store *revocation.Store, reg *registry.Store, trust *keyring.Store, replay *revocation.Store, broker *VaultGateway, options ...UpstreamTLSOptions) (http.Handler, error) {
 	target, err := url.Parse(targetURL)
 	if err != nil {
 		return nil, err
@@ -74,6 +87,10 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 	if err!=nil { return nil,err }
 	cfg,err=cfg.Snapshot()
 	if err!=nil { return nil,err }
+	if broker!=nil {
+		if audience=="" || target.Scheme!="https" || tlsConfig==nil || !cfg.RedactSecrets { return nil,errors.New("vault requires authenticated HTTPS and enabled secret inspection") }
+		if err:=broker.bind(targetURL,audience); err!=nil { return nil,err }
+	}
 	// Copy the supplied key so later caller mutations cannot desynchronise JWKS.
 	pubKey = append(ed25519.PublicKey(nil), pubKey...)
 	var jwks *passport.JWKS
@@ -272,9 +289,60 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 				return
 			}
 		}
-		response,err:=exchange(r,target,transport,claims,bodyBytes,mcpInfo,cfg.RedactSecrets)
+		var secret []byte
+		var leaseDeadline time.Time
+		var selection policy.VaultSelection
+		var event audit.Event
+		// Return generic errors; audit failures must never cause a fallback
+		// to the ordinary non-Vault gateway.
+		writeAudit:=func(phase string,status int) error {
+			if broker==nil { return nil }
+			event.Phase,event.Status=phase,status
+			return broker.audit.Record(event)
+		}
+		auditUnavailable:=func(){
+			if isMCP { writeMCPError(w,503,-32603,"vault audit unavailable") } else { http.Error(w,"vault audit unavailable",503) }
+		}
+		if broker!=nil {
+			id,e:=audit.NewID()
+			if e!=nil { auditUnavailable(); return }
+			event=audit.Event{AttemptID:id,Action:"credential_use",Actor:"agent",AgentID:claims.AgentID,Owner:claims.Owner,PassportID:claims.ID,Audience:audience,VaultID:broker.id,Method:r.Method}
+			if e:=writeAudit("attempt",0); e!=nil { auditUnavailable(); return }
+			lease,err:=broker.credential(claims,audience,targetURL,r,mcpInfo,&event)
+			if err!=nil {
+				status:=http.StatusServiceUnavailable
+				if errors.Is(err,policy.ErrVaultDenied) || errors.Is(err,vault.ErrInactiveVersion) { status=http.StatusForbidden }
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault credential unavailable or denied"})
+				phase:="credential_unavailable"
+				if status==403 { phase="denied" }
+				if e:=writeAudit(phase,status); e!=nil { auditUnavailable(); return }
+				if isMCP { writeMCPError(w,status,-32603,"vault credential unavailable or denied") } else { http.Error(w,"vault credential unavailable or denied",status) }
+				return
+			}
+			defer lease.close()
+			selection=lease.selection
+			// Record intent, not proof that any network bytes were sent.
+			// Perform final live checks AFTER writing to the sink.
+			if e:=writeAudit("dispatch_intent",0); e!=nil { auditUnavailable(); return }
+			// Storage lookup is potentially slow. Repeat live checks after
+			// the lookup so a stale decision cannot authorize injection.
+			e=checkLive(rawToken,audience,trust,reg,store)
+			if e==nil { _,e=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now()) }
+			if e==nil { e=broker.checkActive(selection) }
+			if e==nil { _,e=passport.VerifyRequest(r.Header.Get(passport.ProofHeader),rawToken,holder,binding,time.Now()) }
+			if e==nil { secret,leaseDeadline,e=lease.consume(time.Now()) }
+			if e!=nil {
+				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault final admission denied"})
+				if e:=writeAudit("denied_before_dispatch",403); e!=nil { auditUnavailable(); return }
+				if isMCP { writeMCPError(w,403,-32603,"vault final admission denied") } else { http.Error(w,"vault final admission denied",403) }
+				return
+			}
+			defer clear(secret)
+		}
+		response,err:=exchange(r,target,transport,claims,bodyBytes,mcpInfo,cfg.RedactSecrets,secret,leaseDeadline)
 		if err!=nil {
 			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"upstream response rejected or unavailable"})
+			if e:=writeAudit("exchange_failed_or_rejected",502); e!=nil { auditUnavailable(); return }
 			if isMCP { writeMCPError(w,http.StatusBadGateway,-32603,"upstream response rejected") } else { http.Error(w,"upstream response rejected",http.StatusBadGateway) }
 			return
 		}
@@ -283,11 +351,30 @@ func newHandler(targetURL string, pubKey ed25519.PublicKey, cfg *policy.Config, 
 		if audience!="" {
 			if e:=checkLive(rawToken,audience,trust,reg,store); e!=nil {
 				emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"credential lifecycle check failed before response"})
+				if e:=writeAudit("response_withheld",403); e!=nil { auditUnavailable(); return }
 				if isMCP { writeMCPError(w,403,-32603,"response access denied") } else { http.Error(w,"response access denied",403) }
 				return
 			}
 		}
-		emitAudit(AuditEvent{AgentID:claims.AgentID,Owner:claims.Owner,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"ALLOW",Scopes:claims.Scopes})
+		if broker!=nil && (broker.checkActive(selection)!=nil || !time.Now().Before(leaseDeadline)) {
+			emitAudit(AuditEvent{AgentID:claims.AgentID,PassportID:claims.ID,Method:r.Method,Decision:"BLOCK",Reason:"vault lifecycle or lease check failed before response"})
+			if e:=writeAudit("response_withheld",403); e!=nil { auditUnavailable(); return }
+			if isMCP { writeMCPError(w,403,-32603,"response access denied") } else { http.Error(w,"response access denied",403) }
+			return
+		}
+		if broker!=nil {
+			// This event records intended release, not delivery or business success.
+			if e:=writeAudit("response_release_intent",response.status); e!=nil { auditUnavailable(); return }
+			// Logging may block. Recheck after the sink accepts the intent.
+			if checkLive(rawToken,audience,trust,reg,store)!=nil || broker.checkActive(selection)!=nil || !time.Now().Before(leaseDeadline) {
+				if e:=writeAudit("response_withheld",403); e!=nil { auditUnavailable(); return }
+				if isMCP { writeMCPError(w,403,-32603,"response access denied") } else { http.Error(w,"response access denied",403) }
+				return
+			}
+		}
+		// Vault already recorded checked release intent. Do not introduce
+		// another potentially blocking log write after its final live check.
+		if broker==nil { emitAudit(AuditEvent{AgentID:claims.AgentID,Owner:claims.Owner,PassportID:claims.ID,Method:r.Method,Path:r.URL.Path,Decision:"ALLOW",Scopes:claims.Scopes}) }
 		for key,values:=range response.headers { for _,value:=range values { w.Header().Add(key,value) } }
 		w.WriteHeader(response.status)
 		if r.Method!="HEAD" && response.status!=204 && response.status!=205 { _,_=w.Write(response.body) }

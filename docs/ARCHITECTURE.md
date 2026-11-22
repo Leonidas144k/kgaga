@@ -43,3 +43,23 @@ Use separate protected directories for registry, revocation, trust and replay. F
 ## Next architecture
 
 A hardened HTTP/MCP boundary precedes vault, audit ledger and enterprise control plane. Independent workload attestation, standard protocol interoperability, secure remote issuance, secret management and multi-node consistency are not included in this preview.
+
+## Vault development foundation
+
+Gateway merged at 2fcecf6; post-merge CI passed. The separate internal/vault cryptographic foundation is under development on the Vault branch; see [Vault architecture](VAULT_ARCHITECTURE.md). It does not yet change the request lifecycle or provide secret storage or injection.
+
+Vault increment 002 adds the isolated operator-only immutable encrypted record store. Caller-owned keys remain outside storage; no agent or gateway integration. See VAULT_ARCHITECTURE.md for trust and recovery constraints.
+
+Vault increment 003 introduces managed envelope encryption with an external operator-held KEK file, per-attempt random DEKs and immutable KGE1 records. The KEK file is plaintext under separate local custody, not KMS/HSM-backed. No agent-facing secret API or changes to gateway forwarding.
+
+Vault increment 004 adds a separate strict, immutable Vault policy evaluator in internal/policy. It selects metadata for an exact holder-bound, nondelegated agent operation after trusted gateway admission. It does not authenticate claims on its own, read secrets or alter existing gateway behavior; credential injection is the next increment.
+
+Vault increment 005 wires the exact policy and managed store into explicit authenticated HTTPS gateway mode. All protected operations require a matching Vault grant; fixed bearer injection occurs only in the outbound request, with exact-token response checks. Operator-only initialization and stdin provisioning commands added. No production assurance, leases, rotation or agent retrieval endpoint.
+
+Vault increment 006 requires authenticated credential validity metadata and internal one-use leases, with deadline-limited HTTPS exchanges and response release. Untimed records fail closed in Vault mode; true provider-issued ephemeral tokens remain future work.
+
+Vault increment 007 adds authenticated persistent per-name lifecycle metadata, explicit activation and revocation, monotonic credential version rotation, live lifecycle checks before dispatch and response release, and operator CLI commands. Policy grants remain pinned. Master key rotation, external provider revocation and rollback resistance remain open.
+
+Vault increment 008 adds a trusted operator-only BearerSource import boundary and a version-pinned HashiCorp KV v2 HTTPS adapter. Imports stage ordinary encrypted local records and require explicit activation. Gateway runtime does not fetch from external providers. Live synchronization, provider-native issuance and AWS/KMS integrations remain open.
+
+Vault increment 009 adds correlated structured usage and operator audit events, mandatory checked intent writes before dispatch/mutation and response release, and post-write live checks. Stderr is a preview sink, not a durable or tamper-evident Ledger.

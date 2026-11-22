@@ -37,3 +37,16 @@ The preview is for isolated development with synthetic data. A green CI pipeline
 - [ ] Review distribution license and private vulnerability reporting before publishing artifacts or a preview tag.
 
 Outstanding: independent protocol/cryptography review, sustained load tests, operational key custody, replay storage recovery and pruning, complete MCP compatibility, OS isolation, tamper-evident audit, multi-node consistency and certificate lifecycle. Final admission checks narrow but do not eliminate the revocation/dispatch race. No production assurance is claimed.
+
+## Vault v0.5.0 development-preview review
+
+- [x] Increments 1–9 local regression and lifecycle validation, including corrected audit commit 02c6948; CI 44764585616 succeeded.
+- [x] Increment 10 GitHub CI run 44775885437 succeeded at d2ad5d2, including race suite, repeated audit and brokerage regression, parser fuzz, build and synthetic CLI lifecycle.
+- [ ] Independently repeat increment 10 final validation on a local developer machine (CI green; no user-local log for this commit yet).
+- [x] Compare Vault branch to main: 11 ahead, 0 behind, 38 changed files at d2ad5d2. Review preview scope and explicit residual risks; not an independent code audit.
+- [ ] Run a fresh govulncheck and review dependency plus supported Go toolchain vulnerabilities for the final branch. go mod verify does not scan advisories; an earlier scan at 04afc81 predates Vault.
+- [ ] Independent source/protocol/cryptography review and threat-model sign-off.
+- [ ] Review and explicitly approve synthetic-data preview scope; merge PR only after review and verify main CI.
+- [ ] Before any distribution: resolve license and private security reporting, supported build toolchains, artifacts and recovery/migration documentation.
+
+Unresolved production gates: persistent KEK wrap budget and aggregate storage quotas, protected KEK custody/rotation, rollback resistance and crash recovery, trusted time, dynamic provider issuance/revocation, real provider interoperability, independent security review, sustained load tests, durable tamper-evident audit, and distributed consistency. No live credentials, production approval or release tag.
