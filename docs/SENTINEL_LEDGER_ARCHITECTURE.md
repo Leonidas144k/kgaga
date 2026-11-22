@@ -1,6 +1,6 @@
 # Kgaga Sentinel & Ledger v0.6.0 — development architecture
 
-Status: increment 005, **standalone advisory Sentinel signal engine**. No default CLI Ledger or Sentinel runtime integration is implemented.
+Status: increment 006, **advisory incident workflow foundation**. No default CLI Ledger or Sentinel runtime integration is implemented.
 
 ## Ledger scope (increment 001)
 
@@ -39,6 +39,14 @@ The new `internal/sentinel` package evaluates trusted `kgaga.vault.audit.v1` rec
 Current signal groups are: `credential_denial_burst` (denied, denied_before_dispatch), `exchange_failure_burst` (credential_unavailable, exchange_failed_or_rejected), and `response_withheld_burst` (response_withheld). Each random attempt ID is counted at most once per vault/agent/owner/audience group, even when several failure phases are produced for a single request. The first observed failure category wins. Defaults: five-minute sliding window, thresholds 5/5/3, 512 active identity groups, 128 counted failures per group. Events beyond a quota return an explicit `ErrCapacity`, not a silent eviction or evidence of successful detection. Thresholds emit once on crossing and re-arm only once old counts expire. Alerts contain only the group identity, signal/count/window and observation time; no credential, token, proof, secret name, request body, URI, source IP or passport ID is copied into alerts. Identifiers remain operator and claim metadata, not scrubbed anonymity.
 
 **No automatic actions:** no suspension, revocation, policy update, request blocking, network alert delivery, durable detector state, cross-process coordination, replay detection, behavioural ML, anomalous tool-call heuristics, or rate-limit detection. Those last two security signal classes cannot be reliably inferred from the existing Vault structured event schema. Exchange failures and withheld responses can be operational faults rather than attacks. Process restart loses windows and deduplication. Source authentication and alert transport are future work. No new user-facing CLI flags; existing Gateway/Vault execution remains unchanged.
+
+## Increment 006 — incident records and operator workflow
+
+`sentinel.IncidentManager` accepts already trusted advisory Sentinel alerts, creates bounded incident IDs and requires explicit operator-reviewed acknowledgement and resolution. States are `open → acknowledged → resolved`, with strict expected revisions for optimistic concurrency, explicit resolution classifications (`benign`, `confirmed`, `inconclusive`) and no reopen of resolved cases. A future matching alert may open a new incident while prior cases remain retained. Manager capacity is explicit and fails closed; no silent eviction.
+
+Every successful state transition is first appended as a `kgaga.vault.audit.v1` event carrying narrowly selected incident metadata to the existing checkpointed Ledger interface. The event is accepted **before** the manager updates in-memory case state. If Ledger append is ambiguous or fails, the manager latches unavailable rather than guessing which transition committed. This adapter is programmatic opt-in, not a Gateway/CLI default and not an external delivery system. Only operator identifiers supplied by trusted calling code are recorded; there is no independent operator login, RBAC or cryptographic attestation. No automatic suspension, credential revocation or policy changes.
+
+**Limitations:** the incident manager does not rebuild its index or cases from the Ledger after restart. It has no notifications, acknowledgement deadlines, operational escalation, backup/recovery, multi-process coordination, trusted externally anchored Head, or real-time provider integrations. Callers must validate alert provenance. Incident records add fields to the audit event schema; no secret payloads, raw passports or signed proofs are added. Treat as synthetic-data internal development only.
 
 ## Planned next increments
 

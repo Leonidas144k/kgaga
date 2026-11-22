@@ -168,3 +168,7 @@ Increment 003 passed ten repeated local race tests and full regression, plus CI 
 ### Sentinel & Ledger increment 005
 
 Increment 004 passed local repeated Ledger, Vault integration and full race tests, plus GitHub CI 45023064147. Increment 005 adds a standalone bounded advisory detector for unique-attempt denial, exchange-failure and withheld-response bursts, with per-identity sliding windows, explicit capacity errors, deterministic time/clock tests and concurrency tests. Replay, rate-limit and full behavioural monitoring remain unimplemented. CI/local validation pending.
+
+### Sentinel & Ledger increment 006
+
+Increment 005 passed repeated local Sentinel race tests, Ledger suite, full regression, lifecycle and GitHub CI 45026876140. Increment 006 adds bounded operator-review incident cases with write-before-state-transition recording into the checkpointed Ledger, strict revision/state validation, explicit fail-closed incident storage errors, and synthetic end-to-end tests. No external delivery, authenticated operator RBAC, restart reconstruction or automatic mitigation; validation pending.
