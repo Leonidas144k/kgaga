@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.5.0 vault development
 
+- Document completed Vault implementation and CLI preview semantics, successful Increment 010 CI evidence and explicit remaining release gates. No production release authorization.
+
 - Latch audit sink write failures, regression-test revocation during dispatch/release intent, fuzz Vault formats in CI, and document development-preview release gates.
 
 - Add structured correlated Vault usage and operator audit events with checked intent writes and fail-closed dispatch/release on writer errors. Durable and tamper-evident Ledger remains future work.

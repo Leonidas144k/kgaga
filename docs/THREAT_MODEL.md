@@ -47,4 +47,4 @@ Upstream TLS verifies the configured hostname/IP and certificate chain; optional
 | Audit sink loss | Checked intent writes, latched on error, post-write rechecks | No durable collection or tamper-evident chain; sink can block |
 | Resource loss | Individual record/parser limits, gateway admission bounds | Aggregate Vault storage, wrap quota enforcement, recovery, sustained load |
 
-Preview excludes real credentials, provider-native leases, master rotation, multi-node state, and production deployment. Validation of increment 010 pending. Independent protocol/cryptographic review, explicit release approval and current dependency/toolchain checks remain open.
+Preview excludes real credentials, provider-native leases, master rotation, multi-node state, and production deployment. Increment 010 GitHub CI succeeded at d2ad5d2 (44775885437); developer-local confirmation and independent review remain outstanding. Independent protocol/cryptographic review, explicit release approval and current dependency/toolchain checks remain open.

@@ -144,3 +144,7 @@ Increment 8 passed repeated local provider/policy/vault/injection tests and CI a
 ### Vault increment 10
 
 Increment 9 corrected at 02c6948; repeated local audit/policy/vault/brokerage tests and full lifecycle passed, CI 44764585616 succeeded. Increment 10 latches audit sink write failures, removes redundant success log after final Vault check, tests revocation during audit writes, adds Vault binary/JSON parser fuzzing and release gates. Validation pending; internal preview only, production blockers remain open.
+
+### Vault development-preview review status
+
+Increment 010 CI at d2ad5d2 succeeded (44775885437), including repeated audit/brokerage tests, race suite, parser fuzzing, build and CLI lifecycle. The branch is 11 commits ahead of main with no divergence at that snapshot. Documentation and PR review are still required. No live credentials, production release or distribution tag approved. Run current govulncheck before merge review; Go 1.23.4 is the declared module toolchain, and the earlier scan predates Vault.
