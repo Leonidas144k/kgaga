@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.6.0 Sentinel & Ledger development
 
+- Restore advisory delivery states from verified ordered Ledger history; block fresh dispatcher resets and uncertain in-flight resends, preserving stable IDs, attempt bounds and cooldowns.
+
 - Add explicit manual advisory delivery interface with audited intent/outcomes, retry limits, idempotency metadata, and sanitized operator notices. Transport plugin and restart replay pending.
 
 - Restore advisory incident state from bounded fully verified checkpointed Ledger history, rejecting orphaned, conflicting or malformed transitions; no automatic crash recovery.

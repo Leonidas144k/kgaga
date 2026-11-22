@@ -180,3 +180,7 @@ Increment 006 passed local ten-repeat Sentinel races, five-repeat Ledger race te
 ### Sentinel & Ledger increment 008
 
 Increment 007 passed ten-repeat local Sentinel race tests, five-repeat Ledger race tests, full regression and CI 45030737153. Increment 008 introduces manual advisory delivery with a stable idempotency ID, bounded retries/timeouts, checked pre-send intent and outcome records in Ledger, sanitized notices and fail-closed storage errors. Transport is operator-supplied; no real provider adapter, restart delivery recovery or runtime Gateway configuration. Validation pending.
+
+### Sentinel & Ledger increment 009
+
+Increment 008 passed local repeated Sentinel/ Ledger race tests, full integration and CLI lifecycle, with GitHub CI 45033403402. Increment 009 adds full bounded, checkpoint-verified ordered incident/delivery history replay, reconstruction of accepted/failed/queued/uncertain delivery states, strict transition validation, and a safeguard rejecting fresh dispatchers that could forget previous accepted/uncertain sends. No operator/provider reconciliation API, external anchor, real delivery transport or runtime CLI activation; CI/local validation pending.

@@ -1,6 +1,6 @@
 # Kgaga Sentinel & Ledger v0.6.0 — development architecture
 
-Status: increment 008, **operator-controlled advisory delivery interface**. No default CLI Ledger or Sentinel runtime integration is implemented.
+Status: increment 009, **verified delivery-state reconstruction and uncertain-send containment**. No default CLI Ledger or Sentinel runtime integration is implemented.
 
 ## Ledger scope (increment 001)
 
@@ -63,6 +63,16 @@ Every successful state transition is first appended as a `kgaga.vault.audit.v1` 
 Default policy permits at most three manually triggered sends, a minimum one-second retry interval, a five-second delivery deadline and at most 256 pending identities. The dispatcher is serialized and rejects invalid configuration and unsafe incident states. The transport notice carries only incident ID/revision, signal/severity, vault/agent/audience, count and advisory marker—no credential names, tokens, proofs, origins, URLs, request bodies or raw transport errors. A successful adapter return means **transport acceptance**, not delivery to, or acknowledgement by, a human.
 
 **Limitations:** delivery queue and attempts are not reconstructed after restart, and no independent operator authentication, delivery receipt, destination validation, TLS-pin policy, durable outbox recovery, external alert provider integration or multi-process coordination exists. The existing Gateway and CLI remain unchanged. Delivery must remain explicitly opt-in and synthetic-data only.
+
+## Increment 009 — verified delivery-state reconstruction
+
+`ledger.AnchoredJournal.SentinelHistory` re-verifies the entire bounded journal, including other event categories, against the checkpoint-verified Head, and returns incident and delivery records in original chain order. The journal must have been opened with an independently trusted expected Head. The total scan is limited to 16 MiB and 16,384 selected events. No truncation, synthesis or automatic crash-lock cleanup occurs.
+
+`sentinel.RestoreDispatcher(journal, maxIncidents, transport, config, clock)` reconstructs the incident manager and manual delivery dispatcher from this history together. It validates globally unique audit attempt IDs, monotonic timestamps, recorded incident availability/state, stable delivery IDs, incident revision binding, permitted `queued → attempted → accepted|failed` transitions, bounded attempt counters, and minimal sanitized metadata. Events with missing queue records, duplicate terminal outcomes, impossible revisions, extra secret-bearing fields, or an unsupported transport channel fail closed. Recovered accepted deliveries are not resent. Recovered failed outcomes retain bounded manual retries and their cooldown. Recovered queued entries can be attempted manually because no send intent was recorded.
+
+**Critical crash semantics:** an `attempted` record without a verified terminal `accepted` or `failed` outcome is classified `uncertain`. The dispatcher exposes this as `ErrDeliveryUncertain` and **never resends it automatically or manually through the current API**. The operator must independently reconcile provider status and the stable delivery ID; a safe reconciliation protocol has not been implemented. Constructing a fresh `NewDispatcher` against a checkpointed journal with historical delivery events now fails instead of resetting accepted or uncertain delivery state.
+
+Limitations: the recovery API is programmatic, single-process and development-preview only. It requires one trusted owner of journal writes, an externally obtained expected Head, keys outside the Ledger directory and a transport that can honour delivery IDs. No real provider adapter, externally anchored checkpoint, independently verified provider receipt, reconciliation mutation API, multi-process coordination, CLI activation, secure operator authentication or notification queue worker exists. A successful `accepted` outcome establishes transport adapter acceptance, **not human receipt**. Never use real alert destinations or production credentials in this preview.
 
 ## Planned next increments
 
