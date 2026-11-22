@@ -2,6 +2,8 @@
 
 ## Unreleased — v0.6.0 Sentinel & Ledger development
 
+- Add bounded in-memory advisory Sentinel detector for credential denials, exchange failures and withheld responses, with unique-attempt correlation and conservative alert suppression; no enforcement or gateway runtime wiring.
+
 - Add explicit Vault audit-to-Ledger writer adapter and broker injection API with fail-closed verified persistence. Programmatic opt-in only; CLI remains unchanged.
 
 - Add separate authenticated checkpoint snapshots and combined journal/checkpoint append and restart verification with independent expected heads; no external trust anchor or automated crash recovery.

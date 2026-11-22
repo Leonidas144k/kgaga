@@ -21,6 +21,8 @@ jobs:
       - run: go mod verify
       - run: go vet ./...
       - run: go test -race -count=1 ./...
+      - name: Repeat Sentinel advisory detection regressions
+        run: go test -race -count=10 ./internal/sentinel
       - name: Repeat replay concurrency regression tests
         run: go test -race -count=10 ./internal/revocation
       - name: Fuzz passport envelope parser

@@ -164,3 +164,7 @@ Increment 002 passed ten repeated race tests, complete local regressions, and CI
 ### Sentinel & Ledger increment 004
 
 Increment 003 passed ten repeated local race tests and full regression, plus CI 45019143269. Increment 004 adds an explicitly constructed Vault audit-to-Ledger writer adapter, checked canonical event parsing, journal-plus-checkpoint acknowledgement, fail-closed writer latching and a real Vault HTTPS handler integration regression. No CLI opt-in, external checkpoint trust or operator-managed key custody yet; validation pending.
+
+### Sentinel & Ledger increment 005
+
+Increment 004 passed local repeated Ledger, Vault integration and full race tests, plus GitHub CI 45023064147. Increment 005 adds a standalone bounded advisory detector for unique-attempt denial, exchange-failure and withheld-response bursts, with per-identity sliding windows, explicit capacity errors, deterministic time/clock tests and concurrency tests. Replay, rate-limit and full behavioural monitoring remain unimplemented. CI/local validation pending.

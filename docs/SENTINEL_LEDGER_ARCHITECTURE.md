@@ -1,6 +1,6 @@
 # Kgaga Sentinel & Ledger v0.6.0 — development architecture
 
-Status: increment 004, **isolated Vault audit-to-Ledger adapter**. No default CLI Ledger configuration or Sentinel detector is implemented.
+Status: increment 005, **standalone advisory Sentinel signal engine**. No default CLI Ledger or Sentinel runtime integration is implemented.
 
 ## Ledger scope (increment 001)
 
@@ -31,6 +31,14 @@ The new `ledger.AuditBridge` implements `io.Writer` for the existing `audit.NewR
 `VaultGateway.WithAuditRecorder(rec)` returns a *new* broker bound to an explicitly supplied recorder, without modifying an already-serving handler. The existing Vault request/response handling still calls `audit.Recorder.Record` for intent and response release. The integration test constructs a real TLS Vault handler with this alternate recorder and verifies that deliberate journal tampering produces HTTP 503 before a credential can be dispatched.
 
 **Scope restriction:** this is an opt-in *programmatic integration* and test foundation, not a new CLI flag or a default runtime change. The current `kgaga proxy` CLI continues to use the existing structured stderr sink. Separate operator configuration, key custody, trusted checkpoint input, lifecycle, runtime cleanup, recovery and deployment guidance remain unimplemented. Because `AnchoredJournal` holds per-process locks and retains incomplete commits for offline inspection, a restart must not invent or reset checkpoint state. No external trusted checkpoint service. Use synthetic events only.
+
+## Increment 005 — bounded advisory Sentinel detector
+
+The new `internal/sentinel` package evaluates trusted `kgaga.vault.audit.v1` records as **advisory signals only**. Its caller must first authenticate or verify the audit stream (for example, through a separately trusted Ledger reader); the detector does not authenticate arbitrary event structs. It uses a locally trusted UTC clock, rejects noncanonical timestamps outside a one-minute freshness tolerance, and rejects backward clock movement. Only exact recognized Vault agent phases are evaluated; local operator events are ignored.
+
+Current signal groups are: `credential_denial_burst` (denied, denied_before_dispatch), `exchange_failure_burst` (credential_unavailable, exchange_failed_or_rejected), and `response_withheld_burst` (response_withheld). Each random attempt ID is counted at most once per vault/agent/owner/audience group, even when several failure phases are produced for a single request. The first observed failure category wins. Defaults: five-minute sliding window, thresholds 5/5/3, 512 active identity groups, 128 counted failures per group. Events beyond a quota return an explicit `ErrCapacity`, not a silent eviction or evidence of successful detection. Thresholds emit once on crossing and re-arm only once old counts expire. Alerts contain only the group identity, signal/count/window and observation time; no credential, token, proof, secret name, request body, URI, source IP or passport ID is copied into alerts. Identifiers remain operator and claim metadata, not scrubbed anonymity.
+
+**No automatic actions:** no suspension, revocation, policy update, request blocking, network alert delivery, durable detector state, cross-process coordination, replay detection, behavioural ML, anomalous tool-call heuristics, or rate-limit detection. Those last two security signal classes cannot be reliably inferred from the existing Vault structured event schema. Exchange failures and withheld responses can be operational faults rather than attacks. Process restart loses windows and deduplication. Source authentication and alert transport are future work. No new user-facing CLI flags; existing Gateway/Vault execution remains unchanged.
 
 ## Planned next increments
 
