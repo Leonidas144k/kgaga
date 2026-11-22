@@ -86,7 +86,7 @@ func NewWriter(out io.Writer,key Key,id StreamID)(*Writer,error) {
 func validEvent(e audit.Event) bool {
  if e.Schema!=eventSchema || e.Timestamp=="" || len(e.AttemptID)!=32 ||
  len(e.Action)==0 || len(e.Action)>64 || len(e.Phase)==0 || len(e.Phase)>96 ||
- (e.Actor!="agent" && e.Actor!="local_operator") || len(e.VaultID)==0 || len(e.VaultID)>128 {return false}
+ (e.Actor!="agent" && e.Actor!="local_operator" && e.Actor!="sentinel") || len(e.VaultID)==0 || len(e.VaultID)>128 {return false}
  rawID,err:=hex.DecodeString(e.AttemptID)
  if err!=nil || len(rawID)!=16 || e.AttemptID!=hex.EncodeToString(rawID) {return false}
  stamp,err:=time.Parse(time.RFC3339Nano,e.Timestamp)
