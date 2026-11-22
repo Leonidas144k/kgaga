@@ -53,6 +53,13 @@ type Event struct {
 	IncidentWindowSeconds int64 `json:"incident_window_seconds,omitempty"`
 	IncidentObservedAt string `json:"incident_observed_at,omitempty"`
 	OperatorID string `json:"operator_id,omitempty"`
+	// Delivery metadata contains no raw transport errors, credentials,
+	// messages, provider URLs or response bodies.
+	DeliveryID string `json:"delivery_id,omitempty"`
+	DeliveryPhase string `json:"delivery_phase,omitempty"`
+	DeliveryAttempt int `json:"delivery_attempt,omitempty"`
+	DeliveryChannel string `json:"delivery_channel,omitempty"`
+
 }
 
 func NewID()(string,error) {
