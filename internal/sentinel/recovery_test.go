@@ -53,7 +53,7 @@ func TestRestoreIncidentManagerAfterVerifiedRestart(t *testing.T){
 
 func TestRestoreRejectsAuthenticatedButInvalidTransitions(t *testing.T){
  for _,mutation:=range []struct{name string; edit func(*audit.Event)}{
-  {"orphan_acknowledgement",func(e *audit.Event){e.Phase="acknowledged";e.Actor="local_operator";e.OperatorID="trusted";e.IncidentState=IncidentAcknowledged;e.IncidentRevision=2}},
+  {"orphan_acknowledgement",func(e *audit.Event){e.Phase="acknowledged";e.Actor="local_operator";e.OperatorID="trusted";e.IncidentID="fedcba9876543210fedcba9876543210";e.IncidentState=IncidentAcknowledged;e.IncidentRevision=2}},
   {"unknown_resolution",func(e *audit.Event){e.Phase="resolved";e.Actor="local_operator";e.OperatorID="trusted";e.IncidentState=IncidentResolved;e.IncidentRevision=3;e.IncidentResolution=ResolutionConfirmed}},
   {"duplicate_open",func(e *audit.Event){e.IncidentRevision=1}},
   {"bad_revision",func(e *audit.Event){e.IncidentRevision=5}},
